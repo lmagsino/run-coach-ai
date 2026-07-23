@@ -10,10 +10,10 @@ Backend-only. Strava first, no Garmin yet, no frontend. See `running-agent-featu
 
 ### Setup (Step 0)
 - [x] Initialize git repo + initial commit of existing docs
-- [ ] Create GitHub repo (personal `lmagsino/run-coach-ai`) and push
+- [x] Create GitHub repo (personal `lmagsino/run-coach-ai`) and push
 - [x] Create `phase-2-backend` branch off main
 - [x] Create `PROGRESS.md` (this file)
-- [ ] Create one `phase-2`-labeled GitHub issue per task below
+- [x] Create one `phase-2`-labeled GitHub issue per task below (issues #1–#6)
 
 ### Tasks
 - [ ] **1. Prerequisites** — Register Strava app (client ID/secret), confirm Anthropic API key, define `.env` contents
