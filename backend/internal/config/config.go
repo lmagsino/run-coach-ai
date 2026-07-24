@@ -18,7 +18,12 @@ type Config struct {
 	StravaClientSecret string
 	StravaRedirectURI  string
 
+	// StravaMCPCommand is the command (with args) that launches the self-hosted
+	// strava-mcp server, which the backend connects to as an MCP client over stdio.
+	StravaMCPCommand string
+
 	AnthropicAPIKey string
+	AnthropicModel  string // Claude model id for the agent loop
 }
 
 // defaultDatabaseURL points at the local dev Postgres created in Phase 2.
@@ -38,7 +43,9 @@ func Load() (*Config, error) {
 		StravaClientID:     os.Getenv("STRAVA_CLIENT_ID"),
 		StravaClientSecret: os.Getenv("STRAVA_CLIENT_SECRET"),
 		StravaRedirectURI:  getenv("STRAVA_REDIRECT_URI", "http://localhost:8080/auth/strava/callback"),
+		StravaMCPCommand:   getenv("STRAVA_MCP_COMMAND", "go run ./cmd/strava-mcp"),
 		AnthropicAPIKey:    os.Getenv("ANTHROPIC_API_KEY"),
+		AnthropicModel:     getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
 	}
 
 	if cfg.DatabaseURL == "" {
