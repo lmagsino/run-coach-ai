@@ -20,8 +20,8 @@ Backend-only. Strava first, no Garmin yet, no frontend. See `running-agent-featu
 - [x] **2. Go project init** — `go.mod`, folder structure (`/cmd`, `/internal`), Postgres connection + migrations for: chat sessions, chat messages, activity cache ✅ (builds clean, migrations apply, `/healthz` → db:up)
 - [x] **3. Root `CLAUDE.md`** — how to run backend locally, code style/conventions, project structure, required env vars ✅ (includes "commit gradually and often" convention)
 - [~] **4. Strava OAuth flow** — authenticate and obtain an access token — 🏗️ code complete & verified w/o creds (authorize redirect, CSRF state, token store, auto-refresh). ⏳ **Live code→token exchange pending** real Strava creds in `.env`.
-- [ ] **5. Strava MCP client** — call hosted MCP (`https://mcp.strava.com/mcp`); prove `list_activities` returns real data
-- [ ] **6. Claude tool-calling loop** — test question ("how many runs did I do last week") → calls Strava tool → grounded answer from real data
+- [~] **5. Strava MCP** — 🏗️ code complete. **Architecture change:** instead of the hosted `mcp.strava.com` (needs a paid Strava subscription + appears gated to Claude's own connector), we run a **self-hosted `strava-mcp` server** (`backend/cmd/strava-mcp`, written by us) that wraps the free Strava REST API; the backend connects to it as an MCP client (`internal/mcpclient`). ✅ MCP plumbing verified by a creds-free integration test (subprocess + handshake + tool discovery). ⏳ Live `list_activities` **real data** pending Strava creds + OAuth (`go run ./cmd/strava-check`).
+- [~] **6. Claude tool-calling loop** — 🏗️ code complete (`internal/agent` + `POST /chat`). Bridges MCP tools to Claude's tool-use loop; grounded-answer system prompt; model = `claude-sonnet-5` (configurable). ⏳ Live answer pending Anthropic key + real Strava data.
 
 ### Finalize
 - [ ] Merge `phase-2-backend` → main via PR (clean checkpoint before Phase 3)
