@@ -19,7 +19,7 @@ Backend-only. Strava first, no Garmin yet, no frontend. See `running-agent-featu
 - [ ] **1. Prerequisites** — Register Strava app (client ID/secret), confirm Anthropic API key, define `.env` contents
 - [x] **2. Go project init** — `go.mod`, folder structure (`/cmd`, `/internal`), Postgres connection + migrations for: chat sessions, chat messages, activity cache ✅ (builds clean, migrations apply, `/healthz` → db:up)
 - [x] **3. Root `CLAUDE.md`** — how to run backend locally, code style/conventions, project structure, required env vars ✅ (includes "commit gradually and often" convention)
-- [ ] **4. Strava OAuth flow** — authenticate and obtain an access token
+- [~] **4. Strava OAuth flow** — authenticate and obtain an access token — 🏗️ code complete & verified w/o creds (authorize redirect, CSRF state, token store, auto-refresh). ⏳ **Live code→token exchange pending** real Strava creds in `.env`.
 - [ ] **5. Strava MCP client** — call hosted MCP (`https://mcp.strava.com/mcp`); prove `list_activities` returns real data
 - [ ] **6. Claude tool-calling loop** — test question ("how many runs did I do last week") → calls Strava tool → grounded answer from real data
 
