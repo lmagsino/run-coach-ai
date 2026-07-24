@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lmagsino/run-coach-ai/backend/internal/api"
 	"github.com/lmagsino/run-coach-ai/backend/internal/config"
 	"github.com/lmagsino/run-coach-ai/backend/internal/db"
 )
@@ -32,7 +32,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           routes(pool),
+		Handler:           api.New(cfg, pool).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -53,27 +53,5 @@ func main() {
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("graceful shutdown: %v", err)
-	}
-}
-
-// routes wires up the HTTP handlers.
-func routes(pool *pgxpool.Pool) http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthz(pool))
-	return mux
-}
-
-// healthz reports service health, including database connectivity.
-func healthz(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		if err := pool.Ping(ctx); err != nil {
-			http.Error(w, `{"status":"unhealthy","db":"down"}`, http.StatusServiceUnavailable)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok","db":"up"}`))
 	}
 }
