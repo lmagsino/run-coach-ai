@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -40,6 +41,12 @@ func (a *Agent) Answer(ctx context.Context, question string) (string, error) {
 		return "", err
 	}
 
+	// Give Claude the current date so it can resolve relative ranges like
+	// "last week" into the RFC3339 after/before the Strava tool expects.
+	system := systemPrompt + fmt.Sprintf("\n\nThe current date and time is %s. "+
+		"Use it to resolve relative dates (e.g. \"last week\", \"this month\").",
+		time.Now().UTC().Format(time.RFC3339))
+
 	messages := []anthropic.MessageParam{
 		anthropic.NewUserMessage(anthropic.NewTextBlock(question)),
 	}
@@ -48,7 +55,7 @@ func (a *Agent) Answer(ctx context.Context, question string) (string, error) {
 		resp, err := a.anthropic.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     a.model,
 			MaxTokens: 1024,
-			System:    []anthropic.TextBlockParam{{Text: systemPrompt}},
+			System:    []anthropic.TextBlockParam{{Text: system}},
 			Messages:  messages,
 			Tools:     tools,
 		})
