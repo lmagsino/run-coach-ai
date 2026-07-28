@@ -35,7 +35,27 @@ Backend-only. Strava first, no Garmin yet, no frontend. See `running-agent-featu
 ---
 
 ## Phase 3 — Garmin Integration
-_Not started. See spec §11._
+
+Code-only phase. No live Garmin account, no real credentials, no live API calls — everything that would hit a live service is mocked/stubbed. See `running-agent-feature-spec.md` §11 (Phase 3).
+
+### Setup (Step 0)
+- [x] Create `phase-3-garmin` branch off main
+- [x] Add this Phase 3 section to `PROGRESS.md`
+- [x] Create one `phase-3`-labeled GitHub issue per task below (issues #9–#13)
+
+### Tasks
+- [x] **1. `garmin_mcp` scaffolding** — ✅ `deploy/garmin-mcp/` (Dockerfile installing `Taxuspt/garmin_mcp` pinned to commit `68ca159`, compose file for build + one-time `garmin-mcp-auth` login into a named token volume) and `internal/mcpclient/garmin.go` mirroring the Strava client, with a tool allowlist trimming upstream's 110+ tools to the running-relevant ones. `GARMIN_MCP_COMMAND` unset ⇒ Garmin disabled. Compose config validates; Go builds/vets clean. ⏳ Image never built or authenticated (Phase 5).
+- [x] **2. Second tool source in the backend** — ✅ `agent.New` now takes N named `Source`s; tool names namespaced per source (`garmin__get_sleep_data`) because both servers expose `get_activities`; `Answer` returns a `Result` with the tool-call trail, surfaced as `"sources"` on `POST /chat`. Verified by tests against in-process stub MCP servers (namespacing + routing each colliding tool to its owner).
+- [x] **3. Cross-source tool selection** — ✅ system prompt now built from the agent's actual source set: per-source "what it can/can't answer" guidance, plus multi-source selection rules appended only when >1 source is registered. Verified with a scripted stand-in for the Messages API (httptest + base-URL override) driving each plan: Strava-only, Garmin-only, both-in-one-turn, sequential follow-up, no-tools, hallucinated tool name, failing tool, `maxTurns` exhaustion. ⏳ Whether the *real* model picks the right plan per question is its judgment — Phase 5.
+- [x] **4. Mock-based cross-source tests** — ✅ `internal/agent/crosssource_test.go`: fake 8-week Garmin sleep/HRV series + matching Strava long-run series with a signal planted across both (nights <6.2h precede runs ~25s/km slower). Covers sleep-vs-pace (parallel tool calls), overtraining (sequential), and a single-source question that must *not* pull the other source in. Asserts both payloads reach the model verbatim. Plus an opt-in live-model test (`RUNCOACH_LIVE_MODEL_TESTS=1`) that lets the real model choose its own sources over the same fake data — skipped by default, so `go test ./...` makes no network call.
+- [x] **5. `CLAUDE.md` update** — ✅ new "Garmin MCP container" section (Phase 5 build + interactive `garmin-mcp-auth` steps, ~6-month token expiry and how it fails, why compose doesn't run the server, tool allowlist caveat, pinned upstream ref); MCP architecture rewritten for two sources + tool namespacing + config-gated source set; testing notes (stub MCP servers, scripted Messages API, opt-in live-model test); env var table, repo layout, `/chat` response shape, current phase.
+
+### Finalize
+- [ ] Merge `phase-3-garmin` → main via PR (clean checkpoint before Phase 4)
+
+### Deferred to Phase 5 (not Phase-3 scope)
+- Live Garmin verification: real Garmin account, real credentials (email/password + MFA), container actually authenticated and running, real cross-source question answered against real data.
+- This sits alongside the Phase 2 deferral above (live Strava OAuth + real `list_activities` + a live Claude answer), so Phase 5 is the single point where the whole system is connected and validated together.
 
 ## Phase 4 — Frontend
 _Not started. Build Vue chat UI against DESIGN.md._
