@@ -35,7 +35,27 @@ Backend-only. Strava first, no Garmin yet, no frontend. See `running-agent-featu
 ---
 
 ## Phase 3 — Garmin Integration
-_Not started. See spec §11._
+
+Code-only phase. No live Garmin account, no real credentials, no live API calls — everything that would hit a live service is mocked/stubbed. See `running-agent-feature-spec.md` §11 (Phase 3).
+
+### Setup (Step 0)
+- [x] Create `phase-3-garmin` branch off main
+- [x] Add this Phase 3 section to `PROGRESS.md`
+- [x] Create one `phase-3`-labeled GitHub issue per task below (issues #9–#13)
+
+### Tasks
+- [ ] **1. `garmin_mcp` scaffolding** — Dockerfile/compose config for running the `Taxuspt/garmin_mcp` container, plus Go client code (`internal/mcpclient`) that connects to it as an MCP tool source, structured like the existing Strava client
+- [ ] **2. Second tool source in the backend** — register Garmin's tools alongside Strava's in the agent's tool-calling loop (code-level only)
+- [ ] **3. Cross-source tool selection** — extend the Claude tool-calling logic so the agent picks Strava-only, Garmin-only, or both per question; verified with mocked/stubbed tool responses
+- [ ] **4. Mock-based cross-source tests** — fake sleep dataset + fake pace dataset, asserting the agent pulls from and combines both sources
+- [ ] **5. `CLAUDE.md` update** — Garmin container setup notes (how it gets run/authenticated in Phase 5)
+
+### Finalize
+- [ ] Merge `phase-3-garmin` → main via PR (clean checkpoint before Phase 4)
+
+### Deferred to Phase 5 (not Phase-3 scope)
+- Live Garmin verification: real Garmin account, real credentials (email/password + MFA), container actually authenticated and running, real cross-source question answered against real data.
+- This sits alongside the Phase 2 deferral above (live Strava OAuth + real `list_activities` + a live Claude answer), so Phase 5 is the single point where the whole system is connected and validated together.
 
 ## Phase 4 — Frontend
 _Not started. Build Vue chat UI against DESIGN.md._
