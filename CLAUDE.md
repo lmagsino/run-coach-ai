@@ -13,6 +13,7 @@ run-coach-ai/
 ├── PROGRESS.md                        # Cross-session task checklist — keep current
 ├── CLAUDE.md                          # This file
 ├── backend/                           # Go API server (Phase 2)
+├── deploy/garmin-mcp/                 # Garmin MCP container (Phase 3)
 └── frontend/                          # Vue 3 app (Phase 4, not yet created)
 ```
 
@@ -43,17 +44,19 @@ backend/
 │   ├── db/           # pgx pool + embedded migrations
 │   │   └── migrations/  # {version}_{title}.{up|down}.sql
 │   ├── strava/       # OAuth (oauth), token store, REST client (rest)
-│   ├── mcpclient/    # MCP client: spawns strava-mcp, connects over stdio
-│   ├── agent/        # Claude tool-calling loop bridged to MCP tools
+│   ├── mcpclient/    # MCP client: spawns strava-mcp / garmin_mcp over stdio
+│   ├── agent/        # Claude tool-calling loop over N namespaced MCP sources
 │   └── api/          # HTTP handlers (Server struct)
 └── .env.example
 ```
 
 ### MCP architecture (important)
-Both data sources are **self-hosted MCP servers**; the backend is a pure **MCP client**.
+Both data sources are **self-hosted MCP servers**; the backend is a pure **MCP client**. Each is a subprocess speaking MCP over stdio, spawned per chat request and closed when the request ends.
 - **Strava:** we run our own `strava-mcp` server (`cmd/strava-mcp`) that wraps the *free* Strava REST API, authenticated with the OAuth token from `internal/strava`. We do **not** use the hosted `mcp.strava.com` (it needs a paid Strava subscription and appears gated to Claude's first-party connector).
-- **Garmin (Phase 3):** self-hosted `garmin_mcp` container, connected the same way.
-- The agent (`internal/agent`) lists MCP tools, exposes them to Claude, and executes Claude's tool calls against the MCP session.
+- **Garmin:** the upstream `Taxuspt/garmin_mcp` server, run as a container (`deploy/garmin-mcp/`) and installed from git at a pinned commit — we don't vendor or patch it. Unlike Strava there's no per-request token: the container authenticates itself from OAuth tokens cached in a mounted volume.
+- **Tool names are namespaced per source** (`strava__get_activities`, `garmin__get_sleep_data`). Both servers expose an activities listing, so unprefixed names would collide — and a routing bug there would silently answer Strava questions with Garmin data.
+- The agent (`internal/agent`) lists each source's MCP tools, exposes them to Claude under namespaced names, routes each tool call back to the session that owns it, and records which sources an answer drew on (`POST /chat` returns them as `sources`).
+- **Which sources are active is config, not code.** Strava is always registered; Garmin joins only when `GARMIN_MCP_COMMAND` is set. The system prompt is built from the registered set, so with Garmin off the agent is never told it can fetch sleep or HRV data. A *configured but unreachable* source fails the request rather than quietly answering without it.
 
 ### Run locally
 ```bash
@@ -67,13 +70,38 @@ curl localhost:8080/healthz # {"status":"ok","db":"up"}
 
 # After connecting Strava (visit /auth/strava/login in a browser):
 go run ./cmd/strava-check   # prove list_activities over MCP returns real data
+# Answers are {"answer": "...", "sources": ["strava","garmin"]} — `sources` lists
+# the sources actually queried, which is what the Phase 4 status lines render.
 curl -s localhost:8080/chat -d '{"question":"how many runs did I do last week?"}'
 ```
 
-Verify MCP plumbing without any credentials:
+Verify MCP plumbing and agent behaviour without any credentials:
 ```bash
-go test ./internal/mcpclient/   # builds strava-mcp, connects, checks tool discovery
+go test ./...                   # no network calls, no Docker, no accounts needed
 ```
+- `internal/mcpclient` builds `strava-mcp`, connects over stdio, checks tool discovery.
+- `internal/agent` runs the full tool-calling loop against **in-process stub MCP servers** (`stubmcp_test.go`) and a **scripted stand-in for the Messages API** (`fakemodel_test.go`, an `httptest` server plus a base-URL override). That covers tool namespacing/routing, each source-selection plan, and the cross-source scenarios in `crosssource_test.go`.
+- What the stubs *can't* prove is whether the real model picks the right sources for a question. `TestCrossSourceReasoningWithLiveModel` does that against fabricated data, and is skipped unless you opt in:
+  ```bash
+  RUNCOACH_LIVE_MODEL_TESTS=1 go test ./internal/agent/ -run LiveModel -v   # costs Anthropic tokens
+  ```
+
+### Garmin MCP container
+Not built or authenticated yet — it's wired up in code, and `deploy/garmin-mcp/` is validated only by `docker compose config`. The steps below are what Phase 5 runs.
+
+```bash
+cd deploy/garmin-mcp
+docker compose build                                    # installs garmin_mcp at the pinned commit
+docker compose --profile auth run --rm garmin-mcp-auth  # interactive: email/password, then MFA code
+```
+Then uncomment `GARMIN_MCP_COMMAND` in `backend/.env` and restart the server; it should log `agent tool sources: strava, garmin`.
+
+Things worth knowing before touching this:
+- **Auth is a one-off, and interactive.** `garmin-mcp-auth` prompts for the MFA code on the terminal and writes OAuth tokens into the `run-coach-ai-garmin-tokens` volume, where they last ~6 months. The server reuses them, so credentials aren't needed per request. When they expire the symptom is tool calls failing, not a clean error — rerun the auth command.
+- **Compose does not run the server.** A stdio MCP server has no long-running role: the backend spawns its own `docker run -i --rm ...` per request. Compose exists for the build and the auth step only, which is why both services sit behind profiles.
+- **Garmin has no official API.** `garmin_mcp` drives the Garmin Connect *private* endpoints with your personal login, so it can break when Garmin changes them, and aggressive polling risks the account. Keep requests modest.
+- **The tool list is deliberately narrowed.** Upstream exposes 110+ tools; `mcpclient.DefaultGarminTools` allowlists ~10 (sleep, HRV, stress, training load, VO2 max, body composition, steps, activities) via `GARMIN_ENABLED_TOOLS`. Unrecognized names are ignored *silently*, so Phase 5 should diff this list against what the live container actually reports.
+- **Pinned upstream ref.** `GARMIN_MCP_REF` in `deploy/garmin-mcp/docker-compose.yml`. Bump it deliberately, not incidentally.
 
 ### Database
 - Local Postgres server (asdf/Homebrew), passwordless socket trust as user `postgres`.
@@ -101,8 +129,13 @@ See `backend/.env.example`. Summary:
 | `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET` | Strava OAuth app creds |
 | `STRAVA_REDIRECT_URI` | OAuth callback (default `http://localhost:8080/auth/strava/callback`) |
 | `STRAVA_MCP_COMMAND` | Command to launch strava-mcp (default `go run ./cmd/strava-mcp`) |
+| `GARMIN_MCP_COMMAND` | Command to launch garmin_mcp. **Unset ⇒ Garmin disabled**, Strava is the only source |
+| `GARMIN_EMAIL` / `GARMIN_PASSWORD` | Garmin Connect login — only read by the one-time `garmin-mcp-auth` step |
+| `GARMIN_IS_CN` | Set `true` only for Garmin Connect China (garmin.cn) |
 | `ANTHROPIC_API_KEY` | Claude API access |
 | `ANTHROPIC_MODEL` | Agent model (default `claude-sonnet-5`) |
 
 ## Current phase
-**Phase 2 — Backend Foundations** (Strava only, no Garmin, no frontend). Track progress in `PROGRESS.md`.
+**Phase 3 — Garmin Integration** (code-only: Garmin wired in as a second tool source, no live account, no frontend). Track progress in `PROGRESS.md`.
+
+All live-credential work — Strava OAuth, Garmin auth, real Claude answers — is consolidated into **Phase 5**, so nothing in Phases 2–4 is blocked on account setup. When something here is described as verified, check `PROGRESS.md` for whether that means *code-complete against mocks* or *verified live*.
