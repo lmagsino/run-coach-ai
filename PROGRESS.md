@@ -51,7 +51,7 @@ Code-only phase. No live Garmin account, no real credentials, no live API calls 
 - [x] **5. `CLAUDE.md` update** — ✅ new "Garmin MCP container" section (Phase 5 build + interactive `garmin-mcp-auth` steps, ~6-month token expiry and how it fails, why compose doesn't run the server, tool allowlist caveat, pinned upstream ref); MCP architecture rewritten for two sources + tool namespacing + config-gated source set; testing notes (stub MCP servers, scripted Messages API, opt-in live-model test); env var table, repo layout, `/chat` response shape, current phase.
 
 ### Finalize
-- [ ] Merge `phase-3-garmin` → main via PR (clean checkpoint before Phase 4)
+- [x] Merge `phase-3-garmin` → main via PR (clean checkpoint before Phase 4) — PR #14, merged as `399783c`
 
 ### Deferred to Phase 5 (not Phase-3 scope)
 - Live Garmin verification: real Garmin account, real credentials (email/password + MFA), container actually authenticated and running, real cross-source question answered against real data.
