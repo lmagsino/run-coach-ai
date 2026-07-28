@@ -12,14 +12,36 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const systemPrompt = `You are RunCoach, a running coach assistant. Answer the user's ` +
+const basePrompt = `You are RunCoach, a running coach assistant. Answer the user's ` +
 	`questions about their training using ONLY the data returned by the tools. ` +
 	`Ground every claim in what the tools return — cite specific numbers (distances, ` +
 	`paces, dates). If the tools return no data, say so plainly; never invent activities ` +
 	`or fall back on generic training advice.`
+
+// sourceGuidance tells Claude what each source can and cannot answer, so tool
+// selection is the model's decision rather than something hardcoded per question
+// type (spec §5). Only registered sources are described — promising Garmin data
+// when the container is not configured would invite calls that cannot succeed.
+var sourceGuidance = map[string]string{
+	mcpclient.SourceStrava: "the training log: activities with distance, moving time, " +
+		"pace, elevation and the heart rate recorded for each one. It knows nothing " +
+		"about the athlete's recovery or physiology between sessions.",
+	mcpclient.SourceGarmin: "the watch's view of the athlete: the same activities, plus " +
+		"sleep duration and stages, HRV, stress, training load, VO2 max trend, body " +
+		"composition and daily steps. This is the only source for recovery and " +
+		"physiology data.",
+}
+
+// selectionRules is appended only when more than one source is registered.
+const selectionRules = `Choosing which sources to call:
+- Call only what the question needs. Pace, distance, elevation or route questions need Strava alone; sleep, HRV, stress, recovery or training-load questions need Garmin alone.
+- Call both when the question links training to the body — "does my sleep affect my pace", "am I overtraining", "am I on track given how recovered I've been". Answering those from one source is a guess; if a source you need is unavailable, say what is missing instead of guessing.
+- You may request several tools in one turn. Do not wait for one result before asking for another unless the second call depends on the first.
+- Both sources can list activities. Treat Strava as the training log. If the two disagree about the same session, report the discrepancy and say which number came from which source rather than silently picking one.`
 
 const maxTurns = 8
 
@@ -90,11 +112,7 @@ func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
 		return nil, err
 	}
 
-	// Give Claude the current date so it can resolve relative ranges like
-	// "last week" into the RFC3339 after/before the tools expect.
-	system := systemPrompt + fmt.Sprintf("\n\nThe current date and time is %s. "+
-		"Use it to resolve relative dates (e.g. \"last week\", \"this month\").",
-		time.Now().UTC().Format(time.RFC3339))
+	system := a.systemPrompt()
 
 	messages := []anthropic.MessageParam{
 		anthropic.NewUserMessage(anthropic.NewTextBlock(question)),
@@ -140,6 +158,36 @@ func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
 		messages = append(messages, anthropic.NewUserMessage(results...))
 	}
 	return nil, fmt.Errorf("gave up after %d tool-use turns without a final answer", maxTurns)
+}
+
+// systemPrompt assembles the instructions for this agent's actual source set:
+// the grounding rules, what each registered source is good for, the
+// multi-source selection rules (only when there is a choice to make), and the
+// current date so relative ranges like "last week" can be resolved.
+func (a *Agent) systemPrompt() string {
+	var b strings.Builder
+	b.WriteString(basePrompt)
+
+	b.WriteString("\n\nAvailable data sources, one tool set each. Tool names are\n")
+	b.WriteString("prefixed with the source they belong to (e.g. strava" + toolNameSep + "get_activities):\n")
+	for _, src := range a.sources {
+		guidance, ok := sourceGuidance[src.Name]
+		if !ok {
+			guidance = "an additional data source; rely on its tool descriptions."
+		}
+		fmt.Fprintf(&b, "- %s — %s\n", src.Name, guidance)
+	}
+
+	if len(a.sources) > 1 {
+		b.WriteString("\n")
+		b.WriteString(selectionRules)
+	}
+
+	fmt.Fprintf(&b, "\n\nThe current date and time is %s. Use it to resolve relative "+
+		"dates (e.g. \"last week\", \"this month\").",
+		time.Now().UTC().Format(time.RFC3339))
+
+	return b.String()
 }
 
 // buildTools converts every source's MCP tools into Anthropic tool definitions

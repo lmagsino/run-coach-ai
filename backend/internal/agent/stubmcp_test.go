@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -19,6 +20,10 @@ type stubTool struct {
 	name        string
 	description string
 	result      string
+	// fail makes every call to this tool return an error, standing in for a
+	// source that is registered but cannot answer (expired Garmin tokens,
+	// Strava rate limit).
+	fail bool
 }
 
 // stubCall records one tool invocation a stub server received.
@@ -66,11 +71,13 @@ func startStub(t *testing.T, serverName string, tools ...stubTool) (*mcp.ClientS
 	server := mcp.NewServer(&mcp.Implementation{Name: serverName, Version: "test"}, nil)
 
 	for _, tool := range tools {
-		result := tool.result
-		name := tool.name
+		result, name, fail := tool.result, tool.name, tool.fail
 		mcp.AddTool(server, &mcp.Tool{Name: name, Description: tool.description},
 			func(_ context.Context, _ *mcp.CallToolRequest, in map[string]any) (*mcp.CallToolResult, any, error) {
 				log.add(stubCall{Tool: name, Args: in})
+				if fail {
+					return nil, nil, fmt.Errorf("stub %s: %s is unavailable", serverName, name)
+				}
 				return &mcp.CallToolResult{
 					Content: []mcp.Content{&mcp.TextContent{Text: result}},
 				}, nil, nil
