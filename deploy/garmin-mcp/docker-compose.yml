@@ -1,0 +1,53 @@
+# Build and authenticate the Garmin MCP container.
+#
+# Note what this file is NOT for: the backend never runs the server through
+# compose. A stdio MCP server has no long-running role — the backend spawns a
+# fresh `docker run -i --rm ...` container per chat request and the container
+# exits when the session closes (see GARMIN_MCP_COMMAND in backend/.env.example).
+#
+# So compose covers the two one-off operations, both of which happen in Phase 5
+# when real Garmin credentials arrive:
+#
+#   docker compose build                                     # build the image
+#   docker compose --profile auth run --rm garmin-mcp-auth   # interactive login
+#
+# Requires Compose v2.24+ (for `env_file: required: false`).
+
+services:
+  # Image definition only. `profiles` keeps `docker compose up` from starting
+  # it, since a stdio server with no client attached does nothing useful.
+  garmin-mcp:
+    build:
+      context: .
+      args:
+        GARMIN_MCP_REF: ${GARMIN_MCP_REF:-68ca159cb40f2dbba551add8bf27515bc33bdb4b}
+    image: run-coach-ai/garmin-mcp:latest
+    profiles: [manual]
+    env_file:
+      - path: ../../backend/.env
+        required: false
+    volumes:
+      - garmin-tokens:/root/.garminconnect
+    stdin_open: true
+    tty: true
+
+  # One-shot interactive login. Reads GARMIN_EMAIL/GARMIN_PASSWORD from
+  # backend/.env, prompts on the terminal for the MFA code, and writes OAuth
+  # tokens into the shared volume. Rerun when the tokens expire (~6 months).
+  garmin-mcp-auth:
+    image: run-coach-ai/garmin-mcp:latest
+    entrypoint: ["garmin-mcp-auth"]
+    profiles: [auth]
+    env_file:
+      - path: ../../backend/.env
+        required: false
+    volumes:
+      - garmin-tokens:/root/.garminconnect
+    stdin_open: true
+    tty: true
+
+volumes:
+  # Named explicitly so the `docker run` command in GARMIN_MCP_COMMAND can
+  # mount the same volume without going through compose.
+  garmin-tokens:
+    name: run-coach-ai-garmin-tokens

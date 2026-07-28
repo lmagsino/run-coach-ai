@@ -22,6 +22,11 @@ type Config struct {
 	// strava-mcp server, which the backend connects to as an MCP client over stdio.
 	StravaMCPCommand string
 
+	// GarminMCPCommand is the equivalent for the self-hosted garmin_mcp
+	// container. Empty disables Garmin entirely, leaving Strava as the only
+	// tool source — which is how it runs until the container is built.
+	GarminMCPCommand string
+
 	AnthropicAPIKey string
 	AnthropicModel  string // Claude model id for the agent loop
 }
@@ -44,6 +49,7 @@ func Load() (*Config, error) {
 		StravaClientSecret: os.Getenv("STRAVA_CLIENT_SECRET"),
 		StravaRedirectURI:  getenv("STRAVA_REDIRECT_URI", "http://localhost:8080/auth/strava/callback"),
 		StravaMCPCommand:   getenv("STRAVA_MCP_COMMAND", "go run ./cmd/strava-mcp"),
+		GarminMCPCommand:   os.Getenv("GARMIN_MCP_COMMAND"),
 		AnthropicAPIKey:    os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:     getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
 	}
