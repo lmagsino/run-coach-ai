@@ -102,28 +102,31 @@ When a question comes in, the agent decides which tool(s) to call — one, the o
 - Done first so Phase 4 (frontend build) implements against a concrete design instead of guessing at layout while coding
 
 **Phase 2 — Backend Foundations**
-- Obtain Strava API credentials (client ID/secret) by registering an app in Strava's developer portal — required before OAuth work can start
-- Obtain Anthropic API key for Claude API access
 - Initialize repo, create `CLAUDE.md` at project root (bash commands, code style, MCP connection notes, env var setup) so Claude Code has persistent project context from the start
 - Go project setup
 - Postgres schema: chat sessions, messages, cached activity/health data
-- Strava MCP connection working end-to-end (hosted connector, no container needed — simplest source first)
+- Strava MCP client code (hosted connector) — written and unit/mock-tested, not run against a live account yet
 - Basic Claude API tool-calling loop using Strava data only, no Garmin yet
+- *(Live Strava credentials, OAuth flow execution, and real API verification deferred to Phase 5)*
 
 **Phase 3 — Garmin Integration**
-- Confirm which Garmin account will be used (personal vs. dedicated demo account) and have email/password + MFA method ready
-- Get `garmin_mcp` running locally via Docker, authenticated (email/password + MFA)
-- Wire it into the Go backend as a second tool source
-- Test cross-source questions (the core value proposition) once both sources are live — this is the highest-risk part of the build, so it's validated early
+- `garmin_mcp` (Taxuspt/garmin_mcp) integration code — Dockerfile/config and Go client wiring written, not run against a live account yet
+- Wire it into the Go backend as a second tool source alongside Strava (code-level only)
+- Cross-source reasoning logic in the Claude API tool-calling loop (agent decides which tool(s) to call) — tested with mocked/stubbed tool responses, not live data
+- *(Live Garmin account setup, credentials, and real cross-source verification deferred to Phase 5)*
 
 **Phase 4 — Frontend**
 - Build the Vue chat UI against the Phase 1 design
 - Wire up to the Go backend
 - Add the lightweight "checking X..." status indicators while tools run
+- Frontend can be built/tested against mocked backend responses if live credentials aren't wired up yet
 
-**Phase 5 — Polish & Demo Readiness**
-- Test the 5 example questions from Section 4 end-to-end
-- Fix rough edges in agent responses/UI
+**Phase 5 — Credentials, Live Verification, Polish & Demo Readiness**
+- Obtain Strava API credentials (client ID/secret) via Strava's developer portal, run the real OAuth flow
+- Confirm/set up the Garmin account (personal vs. dedicated demo account), authenticate `garmin_mcp` for real
+- Obtain Anthropic API key if not already set up
+- Run the full system live end-to-end: test the 5 example questions from Section 4 against real Strava + Garmin data
+- Fix rough edges in agent responses/UI surfaced by real data
 - Prepare demo format (recording, live walkthrough, or deployed link if pursued later)
 
-**Sequencing rationale**: Phase 3 (cross-source reasoning) is deliberately placed before the frontend build, since it's the hardest technical risk and the core differentiator — better to validate it works well before investing time in polished UI around it.
+**Sequencing rationale**: Phases 2-4 focus purely on writing and unit/mock-testing code, so progress isn't blocked on account setup, API approvals, or credential wrangling. All live credentials and real-data verification — Strava, Garmin, and the actual cross-source reasoning test — are consolidated into Phase 5, so there's one clear point where everything gets connected and validated together, rather than partial verification scattered across phases.
