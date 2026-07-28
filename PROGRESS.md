@@ -45,7 +45,7 @@ Code-only phase. No live Garmin account, no real credentials, no live API calls 
 
 ### Tasks
 - [x] **1. `garmin_mcp` scaffolding** — ✅ `deploy/garmin-mcp/` (Dockerfile installing `Taxuspt/garmin_mcp` pinned to commit `68ca159`, compose file for build + one-time `garmin-mcp-auth` login into a named token volume) and `internal/mcpclient/garmin.go` mirroring the Strava client, with a tool allowlist trimming upstream's 110+ tools to the running-relevant ones. `GARMIN_MCP_COMMAND` unset ⇒ Garmin disabled. Compose config validates; Go builds/vets clean. ⏳ Image never built or authenticated (Phase 5).
-- [ ] **2. Second tool source in the backend** — register Garmin's tools alongside Strava's in the agent's tool-calling loop (code-level only)
+- [x] **2. Second tool source in the backend** — ✅ `agent.New` now takes N named `Source`s; tool names namespaced per source (`garmin__get_sleep_data`) because both servers expose `get_activities`; `Answer` returns a `Result` with the tool-call trail, surfaced as `"sources"` on `POST /chat`. Verified by tests against in-process stub MCP servers (namespacing + routing each colliding tool to its owner).
 - [ ] **3. Cross-source tool selection** — extend the Claude tool-calling logic so the agent picks Strava-only, Garmin-only, or both per question; verified with mocked/stubbed tool responses
 - [ ] **4. Mock-based cross-source tests** — fake sleep dataset + fake pace dataset, asserting the agent pulls from and combines both sources
 - [ ] **5. `CLAUDE.md` update** — Garmin container setup notes (how it gets run/authenticated in Phase 5)
