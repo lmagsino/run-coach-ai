@@ -83,9 +83,9 @@ to feed a browser:
 - [x] Create one `phase-4`-labeled GitHub issue per task below (issues #17–#21)
 
 ### Tasks
-- [ ] **1. Vue 3 project setup** (#17) — Vite + Vue 3 + Tailwind under `frontend/`, Tailwind theme
+- [x] **1. Vue 3 project setup** (#17) — Vite + Vue 3 + Tailwind under `frontend/`, Tailwind theme
       carrying DESIGN.md's palette tokens and the Space Grotesk / Hanken Grotesk pairing
-      (self-hosted, per DESIGN.md §3, since the build is local-only)
+      (self-hosted via @fontsource, per DESIGN.md §3, since the build is local-only) ✅ Vite 8 + Vue 3.5 + Tailwind v4 (CSS-first `@theme`); all 9 palette tokens, both families, `--container-measure`, the three §7 keyframes, and the non-negotiable `prefers-reduced-motion` reset live in `src/style.css`; `npm run build` clean, fonts bundled locally (no Google Fonts request)
 - [ ] **2. Core chat UI components** (#18) — message list (user bubble vs. bubble-less agent
       prose), composer + send action, and the status-indicator component with
       done/active/pending step states
