@@ -57,8 +57,55 @@ Code-only phase. No live Garmin account, no real credentials, no live API calls 
 - Live Garmin verification: real Garmin account, real credentials (email/password + MFA), container actually authenticated and running, real cross-source question answered against real data.
 - This sits alongside the Phase 2 deferral above (live Strava OAuth + real `list_activities` + a live Claude answer), so Phase 5 is the single point where the whole system is connected and validated together.
 
+---
+
 ## Phase 4 — Frontend
-_Not started. Build Vue chat UI against DESIGN.md._
+
+Code-only phase, like Phases 2–3. Build the Vue 3 chat UI against DESIGN.md and wire it to
+the Go backend, tested against **mocked** Strava/Garmin responses — no live credentials.
+See `running-agent-feature-spec.md` §11 (Phase 4).
+
+Two architecture decisions taken at kickoff, both because the Phase 2/3 backend has no way
+to feed a browser:
+- **Status steps come from real backend events, not frontend theatre.** `POST /chat` is a
+  single round-trip that returns only when the answer is done, so DESIGN.md's "demo
+  signature" status list had nothing to render. Phase 4 adds an SSE endpoint that emits
+  per-tool-call events as the agent loop runs. Faking the steps client-side would have to
+  be thrown away in Phase 5.
+- **The mock data lives in the Go backend, not the frontend.** Phase 2/3's stubs are Go
+  *test* fixtures (`stubmcp_test.go`, `fakemodel_test.go`) — unreachable from a browser. A
+  dev-only mock mode serves canned answers through the real handler, so the frontend
+  exercises the real endpoint, response shape, and CORS. Phase 5 flips the flag off.
+
+### Setup (Step 0)
+- [x] Create `phase-4-frontend` branch off main
+- [x] Add this Phase 4 section to `PROGRESS.md`
+- [x] Create one `phase-4`-labeled GitHub issue per task below (issues #17–#21)
+
+### Tasks
+- [ ] **1. Vue 3 project setup** (#17) — Vite + Vue 3 + Tailwind under `frontend/`, Tailwind theme
+      carrying DESIGN.md's palette tokens and the Space Grotesk / Hanken Grotesk pairing
+      (self-hosted, per DESIGN.md §3, since the build is local-only)
+- [ ] **2. Core chat UI components** (#18) — message list (user bubble vs. bubble-less agent
+      prose), composer + send action, and the status-indicator component with
+      done/active/pending step states
+- [ ] **3. Wire frontend to the backend** (#19) — backend: SSE `/chat/stream` emitting tool-call
+      step events + CORS for the Vite dev origin + dev mock mode; frontend: send a message,
+      stream status steps, render the answer
+- [ ] **4. Mocked end-to-end test** (#20) — walk the 5 example questions from spec §4 through the
+      UI against mocked Strava/Garmin data, confirming rendering with fake data
+- [ ] **5. Responsive/layout polish** (#21) — correct in a normal browser window, no breakage at
+      reasonable widths (DESIGN.md §4 responsive rules)
+
+### Finalize
+- [ ] Merge `phase-4-frontend` → main via PR (clean checkpoint before Phase 5)
+
+### Deferred to Phase 5 (not Phase-4 scope)
+- Everything the UI shows is mocked: no live Strava OAuth, no authenticated Garmin
+  container, no real Claude answers. Turning the mock flag off and re-walking the same 5
+  questions against real data is the Phase 5 test.
+- Multi-turn memory across page reloads (`chat_sessions`/`chat_messages` still unused — the
+  thread is in-memory per page load).
 
 ## Phase 5 — Polish & Demo Readiness
 _Not started._
