@@ -22,6 +22,17 @@ const basePrompt = `You are RunCoach, a running coach assistant. Answer the user
 	`paces, dates). If the tools return no data, say so plainly; never invent activities ` +
 	`or fall back on generic training advice.`
 
+// answerFormat teaches the one piece of structure the UI needs that prose cannot
+// express: which single number deserves the pull-quote treatment (DESIGN.md §5).
+// It is a marker rather than a JSON envelope so a malformed response degrades to
+// plain text instead of costing the whole answer.
+const answerFormat = `Formatting your answer:
+- Open with a single short sentence that answers the question directly, then a blank line, then the supporting detail in short paragraphs separated by blank lines.
+- If ONE number is the heart of the answer, put it on its own line as: [figure: VALUE | short caption]
+  e.g. [figure: 6:44 | avg long-run pace per mile — eight seconds ahead of the pace a 2:30 needs]
+- At most one such line per answer, and only when a single figure genuinely carries it. Most answers have none. Never use it for a list of numbers, and never emit more than one.
+- No markdown, headings, bullet lists or tables. Plain prose only.`
+
 // sourceGuidance tells Claude what each source can and cannot answer, so tool
 // selection is the model's decision rather than something hardcoded per question
 // type (spec §5). Only registered sources are described — promising Garmin data
@@ -66,6 +77,41 @@ type ToolCall struct {
 	Failed bool
 }
 
+// EventKind identifies a point in the tool-calling loop worth reporting.
+type EventKind string
+
+const (
+	// EventToolStart fires immediately before a tool call is dispatched.
+	EventToolStart EventKind = "tool_start"
+	// EventToolEnd fires once it returns, with Failed set on error.
+	EventToolEnd EventKind = "tool_end"
+)
+
+// Event is a progress report from inside the loop.
+type Event struct {
+	Kind   EventKind
+	Source string
+	Tool   string
+	Failed bool
+}
+
+// Observer receives Events as the loop runs. It is called synchronously from
+// Answer's goroutine, so an implementation that blocks stalls the answer — SSE
+// writers should hand off rather than do slow work here.
+type Observer func(Event)
+
+// Observe registers an Observer so callers can report progress while an answer
+// is still being assembled. Without one, Answer's tool-call trail is only
+// readable after it returns, which is too late to narrate (spec §5 asks for
+// visible reasoning *while* tools run).
+func (a *Agent) Observe(fn Observer) { a.observer = fn }
+
+func (a *Agent) emit(ev Event) {
+	if a.observer != nil {
+		a.observer(ev)
+	}
+}
+
 // Result is a finished answer plus the trail of tool calls that produced it.
 type Result struct {
 	Answer    string
@@ -90,6 +136,7 @@ type Agent struct {
 	anthropic anthropic.Client
 	model     anthropic.Model
 	sources   []Source
+	observer  Observer
 }
 
 // New builds an Agent over already-connected MCP sessions. Order is preserved
@@ -149,7 +196,11 @@ func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
 					fmt.Sprintf("no such tool %q", tu.Name), true))
 				continue
 			}
+			a.emit(Event{Kind: EventToolStart, Source: ref.source, Tool: ref.tool})
 			out, callErr := callTool(ctx, ref, tu.JSON.Input.Raw())
+			a.emit(Event{
+				Kind: EventToolEnd, Source: ref.source, Tool: ref.tool, Failed: callErr != nil,
+			})
 			result.ToolCalls = append(result.ToolCalls, ToolCall{
 				Source: ref.source, Tool: ref.tool, Failed: callErr != nil,
 			})
@@ -182,6 +233,9 @@ func (a *Agent) systemPrompt() string {
 		b.WriteString("\n")
 		b.WriteString(selectionRules)
 	}
+
+	b.WriteString("\n\n")
+	b.WriteString(answerFormat)
 
 	fmt.Fprintf(&b, "\n\nThe current date and time is %s. Use it to resolve relative "+
 		"dates (e.g. \"last week\", \"this month\").",
