@@ -123,7 +123,7 @@ to feed a browser:
       there while the "Mock data" marker never truncates.
 
 ### Finalize
-- [ ] Merge `phase-4-frontend` → main via PR (clean checkpoint before Phase 5)
+- [x] Merge `phase-4-frontend` → main via PR (clean checkpoint before Phase 5) — PR #22, merged as `7d20a3a`
 
 ### Deferred to Phase 5 (not Phase-4 scope)
 - Everything the UI shows is mocked: no live Strava OAuth, no authenticated Garmin
