@@ -8,6 +8,9 @@ const props = defineProps({
   // While a question is in flight, sending another would interleave two answers
   // in one thread with no way to tell which steps belong to which.
   busy: { type: Boolean, default: false },
+  // The hint line promises real data. Under mock mode that promise is false, and
+  // leaving it up would be the exact claim DESIGN.md §1.5 forbids.
+  mock: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['send'])
@@ -66,6 +69,11 @@ function submit() {
   <p
     class="mx-auto mt-2.5 max-w-measure text-center font-display text-[11.5px] tracking-[.03em] text-muted"
   >
-    Grounded in your real Strava &amp; Garmin data — never generic advice
+    <template v-if="mock">
+      Mock mode — answers are canned, not from your data
+    </template>
+    <template v-else>
+      Grounded in your real Strava &amp; Garmin data — never generic advice
+    </template>
   </p>
 </template>

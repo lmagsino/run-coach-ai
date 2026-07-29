@@ -89,9 +89,18 @@ to feed a browser:
 - [x] **2. Core chat UI components** (#18) — message list (user bubble vs. bubble-less agent
       prose), composer + send action, and the status-indicator component with
       done/active/pending step states ✅ Components match `design/mockup.html` (verified by screenshot at 1280/561/540px). Answer text is parsed into DESIGN.md §5 blocks (lede + paragraphs + at most one figure, via a `[figure: value | caption]` marker) rather than the backend returning JSON, so a malformed field can never cost the whole reply. Custom `wide:` breakpoint at 561px because Tailwind's `sm:` would fire 80px early. Fixed a Vue reactivity bug where mutating the pushed (raw) turn object never re-rendered.
-- [ ] **3. Wire frontend to the backend** (#19) — backend: SSE `/chat/stream` emitting tool-call
+- [x] **3. Wire frontend to the backend** (#19) — backend: SSE `/chat/stream` emitting tool-call
       step events + CORS for the Vite dev origin + dev mock mode; frontend: send a message,
-      stream status steps, render the answer
+      stream status steps, render the answer ✅ `agent.Observe` emits start/end events per tool
+      call; `POST /chat/stream` relays them as `{source, tool, state}` (no label — copy is
+      DESIGN.md's, so the frontend maps it in `lib/stepLabels.js`). `GET /sources` drives the
+      header, greeting and composer hint, so a Strava-only or mocked backend never claims
+      otherwise. Backend tested (SSE frame shape, step pairing, per-scenario source plans,
+      CORS, credential-free mock path); verified in a real browser against the real server
+      for all five spec §4 questions — correct labels, figures, no console or network errors.
+      Also fixed mock scenarios that named **nonexistent tools** (the real ones are
+      `list_activities` and the Garmin allowlist, which has *no* readiness tool); a test now
+      pins them so labels can't silently fall back in Phase 5.
 - [ ] **4. Mocked end-to-end test** (#20) — walk the 5 example questions from spec §4 through the
       UI against mocked Strava/Garmin data, confirming rendering with fake data
 - [ ] **5. Responsive/layout polish** (#21) — correct in a normal browser window, no breakage at

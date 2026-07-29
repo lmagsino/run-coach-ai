@@ -50,6 +50,13 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 	s.sources = sources
 	log.Printf("agent tool sources: %s", strings.Join(sources, ", "))
 	if cfg.MockMode {
+		// Mock scenarios narrate Garmin steps whether or not the container is
+		// configured — that is the point, since exercising the two-source UI is
+		// what mock mode is for. Reporting the real (Strava-only) set here would
+		// leave the header contradicting the status steps beneath it. Honest
+		// because the same response carries mock:true, which the UI displays.
+		s.sources = []string{mcpclient.SourceStrava, mcpclient.SourceGarmin}
+		log.Printf("mock mode reports sources: %s", strings.Join(s.sources, ", "))
 		log.Printf("RUNCOACH_MOCK is set: /chat and /chat/stream serve canned answers; " +
 			"no Strava, Garmin or Claude call is made")
 	}

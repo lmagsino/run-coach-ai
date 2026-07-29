@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { parseAnswer } from './answer.js'
+import { stepLabel } from './stepLabels.js'
 
 // Owns the thread: appends turns, mutates the in-flight agent turn as status
 // steps arrive, and swaps in the answer on completion. The transport is injected
@@ -37,14 +38,13 @@ export function useChat(transport) {
 
     // Steps are keyed so a later event can flip an existing step's state in
     // place instead of appending a duplicate line.
-    const onStep = ({ key, label, state }) => {
+    const onStep = ({ key, source, tool, state }) => {
       const existing = agentTurn.steps.find((s) => s.id === key)
       if (existing) {
         existing.state = state
-        if (label) existing.label = label
         return
       }
-      agentTurn.steps.push({ id: key, label, state })
+      agentTurn.steps.push({ id: key, label: stepLabel({ source, tool }), state })
     }
 
     const onAnswer = (answer) => {
