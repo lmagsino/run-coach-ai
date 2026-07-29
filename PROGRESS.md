@@ -112,8 +112,15 @@ to feed a browser:
       skipped, final answer text only — not tool payloads), and the client sends them since the
       server holds no session state. Verified the follow-up carries all 5 prior turns, in order.
       Also replaced fetch's opaque "Failed to fetch" with a message naming the actual problem.
-- [ ] **5. Responsive/layout polish** (#21) — correct in a normal browser window, no breakage at
-      reasonable widths (DESIGN.md §4 responsive rules)
+- [x] **5. Responsive/layout polish** (#21) — correct in a normal browser window, no breakage at
+      reasonable widths (DESIGN.md §4 responsive rules) ✅ Swept 15 widths from 1920 down to 320px:
+      zero horizontal overflow at every one, and the compact treatment flips at exactly 560/561
+      (figure 34→28px, body 16→15px, padding 28→18px) as §4 specifies. Edge cases: a 300-char
+      unbroken string doesn't push the layout sideways, the user bubble holds its 82% cap, the
+      thread auto-scrolls to the newest turn, and `prefers-reduced-motion` genuinely resolves
+      animations to `none`. One fix: below the breakpoint the "Field Notes" tag wrapped to two
+      lines and squeezed the connection status into a stub, so the tag (decorative) now hides
+      there while the "Mock data" marker never truncates.
 
 ### Finalize
 - [ ] Merge `phase-4-frontend` → main via PR (clean checkpoint before Phase 5)

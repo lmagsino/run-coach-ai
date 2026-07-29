@@ -19,11 +19,16 @@ defineProps({
   <header
     class="flex flex-none items-center justify-between gap-4 border-b border-line px-[18px] py-[15px] wide:px-7 wide:py-[18px]"
   >
-    <div class="flex items-baseline gap-[9px]">
-      <span class="font-display text-[17px] font-bold -tracking-[.02em]">
+    <div class="flex flex-none items-baseline gap-[9px]">
+      <span class="font-display text-[17px] font-bold whitespace-nowrap -tracking-[.02em]">
         Run<b class="font-bold text-accent">Coach</b>
       </span>
-      <span class="font-display text-[10px] font-medium tracking-[.18em] text-muted uppercase">
+      <!-- The tag is decorative, so it yields first when space runs out. Below the
+           breakpoint it was wrapping to two lines and shoving the connection
+           status into a truncated stub. -->
+      <span
+        class="hidden font-display text-[10px] font-medium whitespace-nowrap tracking-[.18em] text-muted uppercase wide:inline"
+      >
         Field Notes
       </span>
     </div>
@@ -40,9 +45,12 @@ defineProps({
       <template v-else-if="sources">
         <span class="size-1.5 flex-none rounded-full bg-accent animate-live" aria-hidden="true" />
         <span class="truncate">{{ sources }}</span>
+        <!-- Never truncated, unlike the source list: a half-rendered honesty
+             marker is worse than none, so if anything has to give it is the
+             source names, which the greeting also states. -->
         <span
           v-if="mock"
-          class="flex-none border-l border-line pl-2 tracking-[.14em]"
+          class="flex-none border-l border-line pl-2 whitespace-nowrap tracking-[.14em]"
           title="RUNCOACH_MOCK is set: answers are canned, not from your real data"
         >
           Mock data
