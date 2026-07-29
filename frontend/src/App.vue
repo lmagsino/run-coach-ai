@@ -8,12 +8,19 @@ import { localTransport } from './lib/localTransport.js'
 
 // Task 3 swaps localTransport for the SSE client against the Go backend.
 const { turns, busy, send } = useChat(localTransport)
+
+// Names both sources, which is only true when both are registered. Task 3 derives
+// this from what the backend actually reports — Garmin is config-gated, so a
+// Strava-only setup must not be told the coach can see sleep and HRV.
+const greeting =
+  'I can see your Strava training and your Garmin sleep, HRV and recovery at the ' +
+  'same time. Ask me something neither app could answer alone.'
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <AppHeader />
-    <ChatThread :turns="turns" />
+    <ChatThread :turns="turns" :greeting="greeting" />
     <footer class="flex-none px-[18px] pt-3 pb-5 wide:px-7 wide:pt-3.5 wide:pb-[26px]">
       <Composer :busy="busy" @send="send" />
     </footer>

@@ -107,9 +107,12 @@ to feed a browser:
 - Multi-turn memory across page reloads (`chat_sessions`/`chat_messages` still unused — the
   thread is in-memory per page load).
 
-**Open design gap (task 2):** DESIGN.md has no empty state — `design/mockup.html` shows an
-in-progress conversation, so first load is a blank thread above the composer. Left blank
-rather than invented, since the design is locked. Needs a decision before the PR.
+**Empty state (task 2, resolved):** DESIGN.md defines none — `design/mockup.html` shows a
+conversation already underway — so first load was a blank thread. Filled with the quietest
+thing that works: the agent's existing `RUNCOACH` label plus one muted line, no new
+component and no suggestion chips (DESIGN.md §1 restraint). The copy names both sources, so
+task 3 must drive it from the sources actually registered — Garmin is config-gated, and a
+Strava-only setup must not be told the coach can see sleep and HRV.
 
 ---
 
