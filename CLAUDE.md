@@ -71,8 +71,21 @@ curl localhost:8080/healthz # {"status":"ok","db":"up"}
 # After connecting Strava (visit /auth/strava/login in a browser):
 go run ./cmd/strava-check   # prove list_activities over MCP returns real data
 # Answers are {"answer": "...", "sources": ["strava","garmin"]} — `sources` lists
-# the sources actually queried, which is what the Phase 4 status lines render.
+# the sources actually queried.
 curl -s localhost:8080/chat -d '{"question":"how many runs did I do last week?"}'
+
+# The UI uses the streaming variant instead, which emits a `step` event as each
+# tool call starts and finishes, then a final `answer` event. -N disables curl's
+# buffering, so you can watch the steps arrive:
+curl -sN localhost:8080/chat/stream -d '{"question":"am I overtraining?"}'
+
+# Which sources this server actually has (Garmin is config-gated), plus whether
+# it is serving mock answers. The frontend reads this to describe itself.
+curl -s localhost:8080/sources   # {"sources":["strava"],"mock":false}
+
+# Credential-free run for frontend work: canned answers for the five spec §4
+# questions, no Strava token or Anthropic key needed.
+RUNCOACH_MOCK=1 go run ./cmd/server
 ```
 
 Verify MCP plumbing and agent behaviour without any credentials:
@@ -120,6 +133,72 @@ Things worth knowing before touching this:
 - Keep packages small and purpose-named under `internal/`.
 - `cmd/*` entrypoints stay thin; logic lives in `internal/`.
 
+## Frontend (Vue 3)
+
+**Location:** `frontend/` — run all npm commands from this dir. Vite 8 + Vue 3 + **Tailwind v4**.
+
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # production build into dist/
+```
+
+The backend must be running on :8080 for the app to do anything. For a
+credential-free run, start it in mock mode:
+
+```bash
+cd backend && RUNCOACH_MOCK=1 go run ./cmd/server
+```
+
+### Design system
+`DESIGN.md` is the source of truth and `design/mockup.html` is the canonical screen
+— match it. The DESIGN.md §2 palette tokens live in `src/style.css` as Tailwind v4
+`@theme` variables under **the same names the doc uses**, so `paper`/`ink`/`accent`
+become `bg-paper`/`text-ink`/`text-accent`. Don't add colors; there is exactly one
+accent by design.
+
+Things that will bite if you don't know them:
+- **`wide:` is a custom breakpoint at 561px**, not a Tailwind default. DESIGN.md §4's
+  responsive threshold is ≤560px and the built-in `sm:` fires at 640px, which would
+  apply the compact treatment 80px early. Styles are written compact-first.
+- **Fonts are self-hosted** via `@fontsource` (DESIGN.md §3 prefers this to the
+  mockup's Google Fonts link for a local-only build). Only the specified weights are
+  imported — adding a new weight means adding an import.
+- **`prefers-reduced-motion` is a base-layer reset** in `src/style.css`, not
+  per-component. DESIGN.md §7 calls it non-negotiable.
+- **Agent answers get no bubble; only user messages do.** That asymmetry is
+  DESIGN.md §1.2's anti-chatbot move, not an oversight.
+
+### How a question flows
+`Composer` → `useChat` → `lib/api.js` → `POST /chat/stream` → step events → `StatusSteps`,
+then the answer replaces the steps.
+
+- **`useChat` takes its transport as an argument**, so the network layer is swappable
+  without touching thread logic.
+- **Answer text is parsed, not JSON.** `lib/answer.js` splits the plain-text answer
+  into DESIGN.md §5 blocks: a lede, paragraphs, and at most one figure pull-quote
+  from a `[figure: VALUE | caption]` marker the system prompt teaches the model to
+  emit (`answerFormat` in `internal/agent/agent.go`). The answer stays plain text
+  because a JSON envelope would make every reply a parse risk — one malformed field
+  would cost the whole answer, where a string always renders. No marker ⇒ no figure,
+  which DESIGN.md §5 explicitly allows.
+- **Step labels live in the frontend** (`lib/stepLabels.js`), keyed by
+  `source/tool`. The backend deliberately sends no label — turning
+  `get_sleep_data` into "Checking your Garmin sleep" is presentation. The keys are
+  the *real* tool names (`list_activities` on Strava, `mcpclient.DefaultGarminTools`
+  for Garmin); a backend test pins the mock scenarios to those names so the labels
+  stay reachable. Unknown tools fall back to a generic-but-honest line.
+- **`pending` steps never appear in practice.** The backend can only report a tool
+  call once the model asks for it, so future steps aren't knowable. `StatusSteps`
+  instead derives a single active step for the two gaps with no tool running:
+  "Working out what to check" before the first call, "Putting it together" after the
+  last. Inventing lookahead steps would be guessing at the model's plan.
+- **The UI asks what it's connected to** (`GET /sources`) rather than assuming.
+  Garmin is config-gated, so the header, greeting, and composer hint all change with
+  the reported source set — and mock mode is labelled as such, because presenting
+  canned answers as the athlete's own data is the one thing DESIGN.md §1.5 rules out.
+
 ## Required env vars
 See `backend/.env.example`. Summary:
 | Var | Purpose |
@@ -134,8 +213,10 @@ See `backend/.env.example`. Summary:
 | `GARMIN_IS_CN` | Set `true` only for Garmin Connect China (garmin.cn) |
 | `ANTHROPIC_API_KEY` | Claude API access |
 | `ANTHROPIC_MODEL` | Agent model (default `claude-sonnet-5`) |
+| `ALLOWED_ORIGIN` | Browser origin allowed by CORS (default `http://localhost:5173`, the Vite dev server). Empty disables CORS |
+| `RUNCOACH_MOCK` | **Dev only.** `1`/`true`/`yes`/`on` ⇒ `/chat` and `/chat/stream` serve canned answers and skip the Strava-token and Anthropic-key checks. Unset ⇒ real path |
 
 ## Current phase
-**Phase 3 — Garmin Integration** (code-only: Garmin wired in as a second tool source, no live account, no frontend). Track progress in `PROGRESS.md`.
+**Phase 4 — Frontend** (code-only: the Vue chat UI, wired to the backend and verified against mock mode — no live account, no real answers). Track progress in `PROGRESS.md`.
 
 All live-credential work — Strava OAuth, Garmin auth, real Claude answers — is consolidated into **Phase 5**, so nothing in Phases 2–4 is blocked on account setup. When something here is described as verified, check `PROGRESS.md` for whether that means *code-complete against mocks* or *verified live*.

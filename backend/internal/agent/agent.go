@@ -22,6 +22,17 @@ const basePrompt = `You are RunCoach, a running coach assistant. Answer the user
 	`paces, dates). If the tools return no data, say so plainly; never invent activities ` +
 	`or fall back on generic training advice.`
 
+// answerFormat teaches the one piece of structure the UI needs that prose cannot
+// express: which single number deserves the pull-quote treatment (DESIGN.md §5).
+// It is a marker rather than a JSON envelope so a malformed response degrades to
+// plain text instead of costing the whole answer.
+const answerFormat = `Formatting your answer:
+- Open with a single short sentence that answers the question directly, then a blank line, then the supporting detail in short paragraphs separated by blank lines.
+- If ONE number is the heart of the answer, put it on its own line as: [figure: VALUE | short caption]
+  e.g. [figure: 6:44 | avg long-run pace per mile — eight seconds ahead of the pace a 2:30 needs]
+- At most one such line per answer, and only when a single figure genuinely carries it. Most answers have none. Never use it for a list of numbers, and never emit more than one.
+- No markdown, headings, bullet lists or tables. Plain prose only.`
+
 // sourceGuidance tells Claude what each source can and cannot answer, so tool
 // selection is the model's decision rather than something hardcoded per question
 // type (spec §5). Only registered sources are described — promising Garmin data
@@ -66,6 +77,41 @@ type ToolCall struct {
 	Failed bool
 }
 
+// EventKind identifies a point in the tool-calling loop worth reporting.
+type EventKind string
+
+const (
+	// EventToolStart fires immediately before a tool call is dispatched.
+	EventToolStart EventKind = "tool_start"
+	// EventToolEnd fires once it returns, with Failed set on error.
+	EventToolEnd EventKind = "tool_end"
+)
+
+// Event is a progress report from inside the loop.
+type Event struct {
+	Kind   EventKind
+	Source string
+	Tool   string
+	Failed bool
+}
+
+// Observer receives Events as the loop runs. It is called synchronously from
+// Answer's goroutine, so an implementation that blocks stalls the answer — SSE
+// writers should hand off rather than do slow work here.
+type Observer func(Event)
+
+// Observe registers an Observer so callers can report progress while an answer
+// is still being assembled. Without one, Answer's tool-call trail is only
+// readable after it returns, which is too late to narrate (spec §5 asks for
+// visible reasoning *while* tools run).
+func (a *Agent) Observe(fn Observer) { a.observer = fn }
+
+func (a *Agent) emit(ev Event) {
+	if a.observer != nil {
+		a.observer(ev)
+	}
+}
+
 // Result is a finished answer plus the trail of tool calls that produced it.
 type Result struct {
 	Answer    string
@@ -90,6 +136,7 @@ type Agent struct {
 	anthropic anthropic.Client
 	model     anthropic.Model
 	sources   []Source
+	observer  Observer
 }
 
 // New builds an Agent over already-connected MCP sessions. Order is preserved
@@ -105,8 +152,32 @@ type toolRef struct {
 	session *mcp.ClientSession
 }
 
-// Answer runs the tool-calling loop and returns a grounded natural-language answer.
+// PriorTurn is one completed exchange earlier in the same conversation, used to
+// resolve follow-up questions like "what about the week before that?" (spec §5,
+// multi-turn memory).
+type PriorTurn struct {
+	Question string
+	Answer   string
+}
+
+// maxPriorTurns caps how much history is replayed. Every turn is re-sent on each
+// request, so an uncapped conversation grows the prompt without bound; the recent
+// exchanges are the ones a follow-up actually refers back to.
+const maxPriorTurns = 6
+
+// Answer runs the tool-calling loop with no prior context.
 func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
+	return a.AnswerInConversation(ctx, nil, question)
+}
+
+// AnswerInConversation runs the tool-calling loop with earlier exchanges
+// replayed first, so pronouns and relative ranges in a follow-up resolve against
+// what was already discussed.
+//
+// Only the final text of each prior answer is replayed, not the tool_use blocks
+// that produced it: the conclusions are what a follow-up refers to, and replaying
+// whole tool payloads would cost far more tokens for no added context.
+func (a *Agent) AnswerInConversation(ctx context.Context, prior []PriorTurn, question string) (*Result, error) {
 	tools, router, err := a.buildTools(ctx)
 	if err != nil {
 		return nil, err
@@ -114,9 +185,23 @@ func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
 
 	system := a.systemPrompt()
 
-	messages := []anthropic.MessageParam{
-		anthropic.NewUserMessage(anthropic.NewTextBlock(question)),
+	if len(prior) > maxPriorTurns {
+		prior = prior[len(prior)-maxPriorTurns:]
 	}
+	var messages []anthropic.MessageParam
+	for _, turn := range prior {
+		// A turn with no answer never completed (an error, or a request the user
+		// abandoned). Replaying the question alone would leave the model looking
+		// at an unanswered prompt and re-answering it instead of the new one.
+		if turn.Question == "" || turn.Answer == "" {
+			continue
+		}
+		messages = append(messages,
+			anthropic.NewUserMessage(anthropic.NewTextBlock(turn.Question)),
+			anthropic.NewAssistantMessage(anthropic.NewTextBlock(turn.Answer)),
+		)
+	}
+	messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(question)))
 	result := &Result{}
 
 	for turn := 0; turn < maxTurns; turn++ {
@@ -149,7 +234,11 @@ func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
 					fmt.Sprintf("no such tool %q", tu.Name), true))
 				continue
 			}
+			a.emit(Event{Kind: EventToolStart, Source: ref.source, Tool: ref.tool})
 			out, callErr := callTool(ctx, ref, tu.JSON.Input.Raw())
+			a.emit(Event{
+				Kind: EventToolEnd, Source: ref.source, Tool: ref.tool, Failed: callErr != nil,
+			})
 			result.ToolCalls = append(result.ToolCalls, ToolCall{
 				Source: ref.source, Tool: ref.tool, Failed: callErr != nil,
 			})
@@ -182,6 +271,9 @@ func (a *Agent) systemPrompt() string {
 		b.WriteString("\n")
 		b.WriteString(selectionRules)
 	}
+
+	b.WriteString("\n\n")
+	b.WriteString(answerFormat)
 
 	fmt.Fprintf(&b, "\n\nThe current date and time is %s. Use it to resolve relative "+
 		"dates (e.g. \"last week\", \"this month\").",

@@ -57,8 +57,90 @@ Code-only phase. No live Garmin account, no real credentials, no live API calls 
 - Live Garmin verification: real Garmin account, real credentials (email/password + MFA), container actually authenticated and running, real cross-source question answered against real data.
 - This sits alongside the Phase 2 deferral above (live Strava OAuth + real `list_activities` + a live Claude answer), so Phase 5 is the single point where the whole system is connected and validated together.
 
+---
+
 ## Phase 4 — Frontend
-_Not started. Build Vue chat UI against DESIGN.md._
+
+Code-only phase, like Phases 2–3. Build the Vue 3 chat UI against DESIGN.md and wire it to
+the Go backend, tested against **mocked** Strava/Garmin responses — no live credentials.
+See `running-agent-feature-spec.md` §11 (Phase 4).
+
+Two architecture decisions taken at kickoff, both because the Phase 2/3 backend has no way
+to feed a browser:
+- **Status steps come from real backend events, not frontend theatre.** `POST /chat` is a
+  single round-trip that returns only when the answer is done, so DESIGN.md's "demo
+  signature" status list had nothing to render. Phase 4 adds an SSE endpoint that emits
+  per-tool-call events as the agent loop runs. Faking the steps client-side would have to
+  be thrown away in Phase 5.
+- **The mock data lives in the Go backend, not the frontend.** Phase 2/3's stubs are Go
+  *test* fixtures (`stubmcp_test.go`, `fakemodel_test.go`) — unreachable from a browser. A
+  dev-only mock mode serves canned answers through the real handler, so the frontend
+  exercises the real endpoint, response shape, and CORS. Phase 5 flips the flag off.
+
+### Setup (Step 0)
+- [x] Create `phase-4-frontend` branch off main
+- [x] Add this Phase 4 section to `PROGRESS.md`
+- [x] Create one `phase-4`-labeled GitHub issue per task below (issues #17–#21)
+
+### Tasks
+- [x] **1. Vue 3 project setup** (#17) — Vite + Vue 3 + Tailwind under `frontend/`, Tailwind theme
+      carrying DESIGN.md's palette tokens and the Space Grotesk / Hanken Grotesk pairing
+      (self-hosted via @fontsource, per DESIGN.md §3, since the build is local-only) ✅ Vite 8 + Vue 3.5 + Tailwind v4 (CSS-first `@theme`); all 9 palette tokens, both families, `--container-measure`, the three §7 keyframes, and the non-negotiable `prefers-reduced-motion` reset live in `src/style.css`; `npm run build` clean, fonts bundled locally (no Google Fonts request)
+- [x] **2. Core chat UI components** (#18) — message list (user bubble vs. bubble-less agent
+      prose), composer + send action, and the status-indicator component with
+      done/active/pending step states ✅ Components match `design/mockup.html` (verified by screenshot at 1280/561/540px). Answer text is parsed into DESIGN.md §5 blocks (lede + paragraphs + at most one figure, via a `[figure: value | caption]` marker) rather than the backend returning JSON, so a malformed field can never cost the whole reply. Custom `wide:` breakpoint at 561px because Tailwind's `sm:` would fire 80px early. Fixed a Vue reactivity bug where mutating the pushed (raw) turn object never re-rendered.
+- [x] **3. Wire frontend to the backend** (#19) — backend: SSE `/chat/stream` emitting tool-call
+      step events + CORS for the Vite dev origin + dev mock mode; frontend: send a message,
+      stream status steps, render the answer ✅ `agent.Observe` emits start/end events per tool
+      call; `POST /chat/stream` relays them as `{source, tool, state}` (no label — copy is
+      DESIGN.md's, so the frontend maps it in `lib/stepLabels.js`). `GET /sources` drives the
+      header, greeting and composer hint, so a Strava-only or mocked backend never claims
+      otherwise. Backend tested (SSE frame shape, step pairing, per-scenario source plans,
+      CORS, credential-free mock path); verified in a real browser against the real server
+      for all five spec §4 questions — correct labels, figures, no console or network errors.
+      Also fixed mock scenarios that named **nonexistent tools** (the real ones are
+      `list_activities` and the Garmin allowlist, which has *no* readiness tool); a test now
+      pins them so labels can't silently fall back in Phase 5.
+- [x] **4. Mocked end-to-end test** (#20) — walk the 5 example questions from spec §4 through the
+      UI against mocked Strava/Garmin data, confirming rendering with fake data ✅ All five driven
+      through a real browser against the real Go server: correct source-naming step labels, one
+      figure pull-quote each, no console errors, no horizontal overflow. Error paths checked too
+      (backend unreachable, in-band SSE `error` event, composer recovers and stays usable).
+      **Found that multi-turn memory did not exist** — the thread displayed history but each
+      request started fresh, so a follow-up had no referent, against spec §5. Implemented:
+      `agent.AnswerInConversation` replays prior exchanges (capped at 6, incomplete turns
+      skipped, final answer text only — not tool payloads), and the client sends them since the
+      server holds no session state. Verified the follow-up carries all 5 prior turns, in order.
+      Also replaced fetch's opaque "Failed to fetch" with a message naming the actual problem.
+- [x] **5. Responsive/layout polish** (#21) — correct in a normal browser window, no breakage at
+      reasonable widths (DESIGN.md §4 responsive rules) ✅ Swept 15 widths from 1920 down to 320px:
+      zero horizontal overflow at every one, and the compact treatment flips at exactly 560/561
+      (figure 34→28px, body 16→15px, padding 28→18px) as §4 specifies. Edge cases: a 300-char
+      unbroken string doesn't push the layout sideways, the user bubble holds its 82% cap, the
+      thread auto-scrolls to the newest turn, and `prefers-reduced-motion` genuinely resolves
+      animations to `none`. One fix: below the breakpoint the "Field Notes" tag wrapped to two
+      lines and squeezed the connection status into a stub, so the tag (decorative) now hides
+      there while the "Mock data" marker never truncates.
+
+### Finalize
+- [ ] Merge `phase-4-frontend` → main via PR (clean checkpoint before Phase 5)
+
+### Deferred to Phase 5 (not Phase-4 scope)
+- Everything the UI shows is mocked: no live Strava OAuth, no authenticated Garmin
+  container, no real Claude answers. Turning the mock flag off and re-walking the same 5
+  questions against real data is the Phase 5 test.
+- Multi-turn memory *within* a session now works (task 4), but the thread lives only in the
+  browser: the `chat_sessions`/`chat_messages` tables are still unused, so a page reload starts
+  a new conversation. Persisting it is Phase 5 or later.
+
+**Empty state (task 2, resolved):** DESIGN.md defines none — `design/mockup.html` shows a
+conversation already underway — so first load was a blank thread. Filled with the quietest
+thing that works: the agent's existing `RUNCOACH` label plus one muted line, no new
+component and no suggestion chips (DESIGN.md §1 restraint). The copy names both sources, so
+task 3 must drive it from the sources actually registered — Garmin is config-gated, and a
+Strava-only setup must not be told the coach can see sleep and HRV.
+
+---
 
 ## Phase 5 — Polish & Demo Readiness
 _Not started._

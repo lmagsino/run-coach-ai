@@ -21,6 +21,9 @@ type Server struct {
 	stravaMCP *mcpclient.Strava
 	garminMCP *mcpclient.Garmin // nil when GARMIN_MCP_COMMAND is unset
 	anthropic anthropic.Client
+	// sources names the registered tool sources, in the order the agent exposes
+	// them. Served to the UI so it can describe what it is actually connected to.
+	sources []string
 }
 
 // New builds a Server from configuration and a database pool.
@@ -44,7 +47,19 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 		s.garminMCP = mcpclient.NewGarmin(garminCmd, garminArgs...)
 		sources = append(sources, mcpclient.SourceGarmin)
 	}
+	s.sources = sources
 	log.Printf("agent tool sources: %s", strings.Join(sources, ", "))
+	if cfg.MockMode {
+		// Mock scenarios narrate Garmin steps whether or not the container is
+		// configured — that is the point, since exercising the two-source UI is
+		// what mock mode is for. Reporting the real (Strava-only) set here would
+		// leave the header contradicting the status steps beneath it. Honest
+		// because the same response carries mock:true, which the UI displays.
+		s.sources = []string{mcpclient.SourceStrava, mcpclient.SourceGarmin}
+		log.Printf("mock mode reports sources: %s", strings.Join(s.sources, ", "))
+		log.Printf("RUNCOACH_MOCK is set: /chat and /chat/stream serve canned answers; " +
+			"no Strava, Garmin or Claude call is made")
+	}
 
 	return s
 }
@@ -65,6 +80,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /auth/strava/login", s.handleStravaLogin)
 	mux.HandleFunc("GET /auth/strava/callback", s.handleStravaCallback)
+	mux.HandleFunc("GET /sources", s.handleSources)
 	mux.HandleFunc("POST /chat", s.handleChat)
-	return mux
+	mux.HandleFunc("POST /chat/stream", s.handleChatStream)
+	// The frontend is served from a different origin in development (Vite on
+	// :5173), so every route needs CORS, including the OPTIONS preflight.
+	return withCORS(s.cfg.AllowedOrigin, mux)
 }

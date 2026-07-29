@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -29,6 +30,17 @@ type Config struct {
 
 	AnthropicAPIKey string
 	AnthropicModel  string // Claude model id for the agent loop
+
+	// AllowedOrigin is the browser origin permitted by CORS — the Vite dev
+	// server in local development. Empty disables the CORS headers entirely.
+	AllowedOrigin string
+
+	// MockMode serves canned answers instead of calling Claude or any MCP
+	// source, so the frontend can be built and demoed before credentials
+	// exist (Phases 2–4 are deliberately credential-free; Phase 5 turns this
+	// off). It bypasses the Strava-token and Anthropic-key requirements, so it
+	// must never be enabled anywhere the answers could be mistaken for real.
+	MockMode bool
 }
 
 // defaultDatabaseURL points at the local dev Postgres created in Phase 2.
@@ -52,12 +64,25 @@ func Load() (*Config, error) {
 		GarminMCPCommand:   os.Getenv("GARMIN_MCP_COMMAND"),
 		AnthropicAPIKey:    os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:     getenv("ANTHROPIC_MODEL", "claude-sonnet-5"),
+		AllowedOrigin:      getenv("ALLOWED_ORIGIN", "http://localhost:5173"),
+		MockMode:           truthy(os.Getenv("RUNCOACH_MOCK")),
 	}
 
 	if cfg.DatabaseURL == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
 	}
 	return cfg, nil
+}
+
+// truthy accepts the spellings people actually type in a .env file. Anything
+// else — including "0", "false" and "" — is off, so a mistyped value fails
+// closed rather than silently serving fake data.
+func truthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func getenv(key, fallback string) string {

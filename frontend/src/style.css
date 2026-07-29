@@ -1,0 +1,120 @@
+/* Self-hosted fonts. DESIGN.md §3 prefers self-hosting over the mockup's Google
+   Fonts <link>, since the v1 build is local-only. Only the weights the design
+   actually specifies are imported — Space Grotesk 400/500/600/700 and Hanken
+   Grotesk 400/500/600. */
+@import '@fontsource/space-grotesk/400.css';
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/space-grotesk/700.css';
+@import '@fontsource/hanken-grotesk/400.css';
+@import '@fontsource/hanken-grotesk/500.css';
+@import '@fontsource/hanken-grotesk/600.css';
+
+@import 'tailwindcss';
+
+/* The design system from DESIGN.md, as Tailwind theme tokens. Names match the
+   DESIGN.md §2 token table exactly so the doc stays the single source of truth:
+   `paper` → `bg-paper`, `accent` → `text-accent`, and so on. */
+@theme {
+  --color-paper: #edece6; /* app background (soft greige) */
+  --color-paper-hi: #f4f3ee; /* raised surfaces: composer, send glyph */
+  --color-ink: #1c201c; /* primary text (forest-charcoal) */
+  --color-muted: #6c6f67; /* secondary text, labels, status steps */
+  --color-faint: #dfddd4; /* faint fills */
+  --color-line: #dad8ce; /* hairline dividers, borders */
+  --color-user: #e3e1d8; /* user message bubble */
+  --color-accent: #2e5d4e; /* deep pine — the ONE accent */
+  --color-accent-soft: #3d7161; /* accent hover */
+
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Hanken Grotesk', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Reading measure (DESIGN.md §4) — drives `max-w-measure` on the thread and
+     composer so both stay optically aligned. */
+  --container-measure: 660px;
+
+  /* DESIGN.md §4 shrinks paddings and type at ≤560px. Tailwind's built-in `sm:`
+     fires at 640px, which would apply the compact treatment 80px too early, so
+     the design's own threshold gets its own breakpoint: styles are written
+     compact-first, and `wide:` restores the full-size values above 560px. */
+  --breakpoint-wide: 561px;
+
+  /* DESIGN.md §7 motion, kept as tokens so the reduced-motion override at the
+     bottom of this file has a single place to neutralise. */
+  --animate-live: live 2.6s ease-out infinite;
+  --animate-pulse-dot: pulse-dot 1.3s ease-in-out infinite;
+  --animate-turn-in: turn-in 220ms ease-out;
+}
+
+/* Connection indicator: slow expanding ring (DESIGN.md §5, §7). */
+@keyframes live {
+  0% {
+    box-shadow: 0 0 0 0 rgb(46 93 78 / 0.35);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgb(46 93 78 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(46 93 78 / 0);
+  }
+}
+
+/* Active status step: gentle scale + opacity pulse. */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Answer arrival — DESIGN.md §7 caps this at ~250ms. */
+@keyframes turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* DESIGN.md §8: visible keyboard focus everywhere, not just on inputs. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* DESIGN.md §7 calls this non-negotiable, so it lives here rather than being
+   reimplemented per component. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
