@@ -107,9 +107,11 @@ to feed a browser:
 - Multi-turn memory across page reloads (`chat_sessions`/`chat_messages` still unused — the
   thread is in-memory per page load).
 
-## Phase 5 — Polish & Demo Readiness
-_Not started._
-
 **Open design gap (task 2):** DESIGN.md has no empty state — `design/mockup.html` shows an
 in-progress conversation, so first load is a blank thread above the composer. Left blank
 rather than invented, since the design is locked. Needs a decision before the PR.
+
+---
+
+## Phase 5 — Polish & Demo Readiness
+_Not started._
