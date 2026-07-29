@@ -11,15 +11,31 @@ let nextId = 0
 const newId = () => `turn-${nextId++}`
 
 /**
- * @param {(question: string, handlers: {onStep: Function, onAnswer: Function}) => Promise<void>} transport
+ * @param {(question: string, handlers: {onStep: Function, onAnswer: Function, history: Array}) => Promise<void>} transport
  */
 export function useChat(transport) {
   const turns = ref([])
   const busy = computed(() => turns.value.some((t) => t.role === 'agent' && t.status === 'working'))
 
+  // The completed exchanges so far, oldest first. Built before the new turn is
+  // appended, and only from turns that actually produced an answer — the backend
+  // holds no session state, so this is the whole of the conversation's memory.
+  function history() {
+    const out = []
+    for (let i = 0; i < turns.value.length - 1; i++) {
+      const q = turns.value[i]
+      const a = turns.value[i + 1]
+      if (q.role === 'user' && a.role === 'agent' && a.status === 'complete' && a.answerText) {
+        out.push({ question: q.text, answer: a.answerText })
+      }
+    }
+    return out
+  }
+
   async function send(question) {
     if (busy.value) return
 
+    const prior = history()
     turns.value.push({ id: newId(), role: 'user', text: question })
 
     turns.value.push({
@@ -28,6 +44,10 @@ export function useChat(transport) {
       status: 'working',
       steps: [],
       blocks: [],
+      // The raw answer text is kept alongside the parsed blocks because it is
+      // what gets replayed as history; reassembling it from blocks would lose
+      // the figure marker.
+      answerText: '',
       error: '',
     })
     // Read the turn back out of the ref rather than keeping the object that was
@@ -48,12 +68,13 @@ export function useChat(transport) {
     }
 
     const onAnswer = (answer) => {
+      agentTurn.answerText = answer
       agentTurn.blocks = parseAnswer(answer)
       agentTurn.status = 'complete'
     }
 
     try {
-      await transport(question, { onStep, onAnswer })
+      await transport(question, { onStep, onAnswer, history: prior })
       // A transport that finished without ever delivering an answer would
       // otherwise leave the status steps pulsing forever, which reads as "still
       // working" when nothing is.

@@ -56,15 +56,27 @@ async function* readEvents(response) {
 /**
  * Asks a question and reports progress as it arrives.
  *
+ * The backend keeps no session state, so the completed exchanges travel with each
+ * request — that is what lets a follow-up like "what about the week before that?"
+ * resolve (spec §5).
+ *
  * @param {string} question
- * @param {{onStep: Function, onAnswer: Function}} handlers
+ * @param {{onStep: Function, onAnswer: Function, history?: Array<{question: string, answer: string}>}} handlers
  */
-export async function streamChat(question, { onStep, onAnswer }) {
-  const res = await fetch(`${BASE}/chat/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question }),
-  })
+export async function streamChat(question, { onStep, onAnswer, history = [] }) {
+  let res
+  try {
+    res = await fetch(`${BASE}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, history }),
+    })
+  } catch {
+    // fetch rejects with "Failed to fetch" for every transport-level problem —
+    // server down, DNS, CORS. Unhelpful verbatim, and it would be rendered in the
+    // agent's own voice in the thread, so say the useful thing instead.
+    throw new Error(`Can’t reach the coach — is the backend running on ${BASE}?`)
+  }
 
   // Failures before the stream opens are JSON with a status; the backend's
   // messages are written for a person ("authorize first at /auth/strava/login"),

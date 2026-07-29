@@ -269,3 +269,49 @@ func TestCORSAllowsTheConfiguredOriginOnly(t *testing.T) {
 		})
 	}
 }
+
+// The client holds the thread, so history has to survive the HTTP boundary
+// intact for follow-ups to work at all. Mock mode ignores it when answering, so
+// this asserts the decode rather than the behaviour — the model's use of it is
+// covered in internal/agent and, live, in Phase 5.
+func TestRequestHistoryDecodesInOrder(t *testing.T) {
+	body := `{"question":"and the week before?","history":[
+		{"question":"q1","answer":"a1"},
+		{"question":"q2","answer":"a2"}
+	]}`
+	req := httptest.NewRequest(http.MethodPost, "/chat", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	var got chatRequest
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.History) != 2 {
+		t.Fatalf("history: got %d turns, want 2", len(got.History))
+	}
+	prior := got.prior()
+	if prior[0].Question != "q1" || prior[0].Answer != "a1" {
+		t.Errorf("first prior turn: got %+v", prior[0])
+	}
+	if prior[1].Question != "q2" || prior[1].Answer != "a2" {
+		t.Errorf("second prior turn: got %+v", prior[1])
+	}
+
+	// And a request carrying history must still be served.
+	mockServer(t).Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status: got %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+}
+
+// A missing history field must behave as an empty conversation, not an error —
+// /chat is documented as curl-friendly with just a question.
+func TestRequestWithoutHistoryIsValid(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/chat",
+		strings.NewReader(`{"question":"am I overtraining right now?"}`))
+	rec := httptest.NewRecorder()
+	mockServer(t).Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	}
+}

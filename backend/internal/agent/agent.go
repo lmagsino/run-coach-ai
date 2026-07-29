@@ -152,8 +152,32 @@ type toolRef struct {
 	session *mcp.ClientSession
 }
 
-// Answer runs the tool-calling loop and returns a grounded natural-language answer.
+// PriorTurn is one completed exchange earlier in the same conversation, used to
+// resolve follow-up questions like "what about the week before that?" (spec §5,
+// multi-turn memory).
+type PriorTurn struct {
+	Question string
+	Answer   string
+}
+
+// maxPriorTurns caps how much history is replayed. Every turn is re-sent on each
+// request, so an uncapped conversation grows the prompt without bound; the recent
+// exchanges are the ones a follow-up actually refers back to.
+const maxPriorTurns = 6
+
+// Answer runs the tool-calling loop with no prior context.
 func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
+	return a.AnswerInConversation(ctx, nil, question)
+}
+
+// AnswerInConversation runs the tool-calling loop with earlier exchanges
+// replayed first, so pronouns and relative ranges in a follow-up resolve against
+// what was already discussed.
+//
+// Only the final text of each prior answer is replayed, not the tool_use blocks
+// that produced it: the conclusions are what a follow-up refers to, and replaying
+// whole tool payloads would cost far more tokens for no added context.
+func (a *Agent) AnswerInConversation(ctx context.Context, prior []PriorTurn, question string) (*Result, error) {
 	tools, router, err := a.buildTools(ctx)
 	if err != nil {
 		return nil, err
@@ -161,9 +185,23 @@ func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
 
 	system := a.systemPrompt()
 
-	messages := []anthropic.MessageParam{
-		anthropic.NewUserMessage(anthropic.NewTextBlock(question)),
+	if len(prior) > maxPriorTurns {
+		prior = prior[len(prior)-maxPriorTurns:]
 	}
+	var messages []anthropic.MessageParam
+	for _, turn := range prior {
+		// A turn with no answer never completed (an error, or a request the user
+		// abandoned). Replaying the question alone would leave the model looking
+		// at an unanswered prompt and re-answering it instead of the new one.
+		if turn.Question == "" || turn.Answer == "" {
+			continue
+		}
+		messages = append(messages,
+			anthropic.NewUserMessage(anthropic.NewTextBlock(turn.Question)),
+			anthropic.NewAssistantMessage(anthropic.NewTextBlock(turn.Answer)),
+		)
+	}
+	messages = append(messages, anthropic.NewUserMessage(anthropic.NewTextBlock(question)))
 	result := &Result{}
 
 	for turn := 0; turn < maxTurns; turn++ {

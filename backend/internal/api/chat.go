@@ -16,6 +16,24 @@ import (
 
 type chatRequest struct {
 	Question string `json:"question"`
+	// History is the completed exchanges earlier in this conversation, oldest
+	// first, so follow-up questions resolve against them (spec §5). The client
+	// holds the thread — the server keeps no session state, which is why it has
+	// to be re-sent each request.
+	History []historyTurn `json:"history"`
+}
+
+type historyTurn struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+}
+
+func (r chatRequest) prior() []agent.PriorTurn {
+	out := make([]agent.PriorTurn, 0, len(r.History))
+	for _, h := range r.History {
+		out = append(out, agent.PriorTurn{Question: h.Question, Answer: h.Answer})
+	}
+	return out
 }
 
 type chatResponse struct {
@@ -39,17 +57,17 @@ type stepEvent struct {
 // MCP round-trips before it can answer.
 const chatTimeout = 90 * time.Second
 
-// readQuestion decodes and validates the request body, writing the error
-// response itself and returning ok=false if it is unusable.
-func readQuestion(w http.ResponseWriter, r *http.Request) (string, bool) {
+// readRequest decodes and validates the request body, writing the error response
+// itself and returning ok=false if it is unusable.
+func readRequest(w http.ResponseWriter, r *http.Request) (chatRequest, bool) {
 	var req chatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Question == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"error": "body must be JSON with a non-empty \"question\"",
 		})
-		return "", false
+		return chatRequest{}, false
 	}
-	return req.Question, true
+	return req, true
 }
 
 // prepareAgent connects every configured MCP source and returns a ready Agent
@@ -101,7 +119,7 @@ func (s *Server) prepareAgent(ctx context.Context) (*agent.Agent, func(), int, e
 // the streaming endpoint because it is the curl-friendly shape the CLI checks and
 // CLAUDE.md document; the UI uses /chat/stream so it can narrate progress.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
-	question, ok := readQuestion(w, r)
+	req, ok := readRequest(w, r)
 	if !ok {
 		return
 	}
@@ -110,7 +128,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if s.cfg.MockMode {
-		scenario := mockchat.Match(question)
+		scenario := mockchat.Match(req.Question)
 		writeJSON(w, http.StatusOK, chatResponse{
 			Answer: scenario.Answer, Sources: scenario.Sources(),
 		})
@@ -124,7 +142,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cleanup()
 
-	result, err := ag.Answer(ctx, question)
+	result, err := ag.AnswerInConversation(ctx, req.prior(), req.Question)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -140,7 +158,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 // in the body: putting user text in a query string would leak it into access logs
 // and cap its length. The frontend reads the stream with fetch instead.
 func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
-	question, ok := readQuestion(w, r)
+	req, ok := readRequest(w, r)
 	if !ok {
 		return
 	}
@@ -159,7 +177,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if s.cfg.MockMode {
-		streamMock(ctx, sse, question)
+		streamMock(ctx, sse, req.Question)
 		return
 	}
 
@@ -184,7 +202,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		sse.send("step", stepEvent{Source: ev.Source, Tool: ev.Tool, State: state})
 	})
 
-	result, err := ag.Answer(ctx, question)
+	result, err := ag.AnswerInConversation(ctx, req.prior(), req.Question)
 	if err != nil {
 		sse.send("error", map[string]string{"error": err.Error()})
 		return

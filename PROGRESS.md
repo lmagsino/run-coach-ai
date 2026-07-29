@@ -101,8 +101,17 @@ to feed a browser:
       Also fixed mock scenarios that named **nonexistent tools** (the real ones are
       `list_activities` and the Garmin allowlist, which has *no* readiness tool); a test now
       pins them so labels can't silently fall back in Phase 5.
-- [ ] **4. Mocked end-to-end test** (#20) — walk the 5 example questions from spec §4 through the
-      UI against mocked Strava/Garmin data, confirming rendering with fake data
+- [x] **4. Mocked end-to-end test** (#20) — walk the 5 example questions from spec §4 through the
+      UI against mocked Strava/Garmin data, confirming rendering with fake data ✅ All five driven
+      through a real browser against the real Go server: correct source-naming step labels, one
+      figure pull-quote each, no console errors, no horizontal overflow. Error paths checked too
+      (backend unreachable, in-band SSE `error` event, composer recovers and stays usable).
+      **Found that multi-turn memory did not exist** — the thread displayed history but each
+      request started fresh, so a follow-up had no referent, against spec §5. Implemented:
+      `agent.AnswerInConversation` replays prior exchanges (capped at 6, incomplete turns
+      skipped, final answer text only — not tool payloads), and the client sends them since the
+      server holds no session state. Verified the follow-up carries all 5 prior turns, in order.
+      Also replaced fetch's opaque "Failed to fetch" with a message naming the actual problem.
 - [ ] **5. Responsive/layout polish** (#21) — correct in a normal browser window, no breakage at
       reasonable widths (DESIGN.md §4 responsive rules)
 
@@ -113,8 +122,9 @@ to feed a browser:
 - Everything the UI shows is mocked: no live Strava OAuth, no authenticated Garmin
   container, no real Claude answers. Turning the mock flag off and re-walking the same 5
   questions against real data is the Phase 5 test.
-- Multi-turn memory across page reloads (`chat_sessions`/`chat_messages` still unused — the
-  thread is in-memory per page load).
+- Multi-turn memory *within* a session now works (task 4), but the thread lives only in the
+  browser: the `chat_sessions`/`chat_messages` tables are still unused, so a page reload starts
+  a new conversation. Persisting it is Phase 5 or later.
 
 **Empty state (task 2, resolved):** DESIGN.md defines none — `design/mockup.html` shows a
 conversation already underway — so first load was a blank thread. Filled with the quietest
