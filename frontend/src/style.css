@@ -33,6 +33,12 @@
      composer so both stay optically aligned. */
   --container-measure: 660px;
 
+  /* DESIGN.md §4 shrinks paddings and type at ≤560px. Tailwind's built-in `sm:`
+     fires at 640px, which would apply the compact treatment 80px too early, so
+     the design's own threshold gets its own breakpoint: styles are written
+     compact-first, and `wide:` restores the full-size values above 560px. */
+  --breakpoint-wide: 561px;
+
   /* DESIGN.md §7 motion, kept as tokens so the reduced-motion override at the
      bottom of this file has a single place to neutralise. */
   --animate-live: live 2.6s ease-out infinite;

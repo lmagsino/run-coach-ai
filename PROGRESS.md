@@ -86,9 +86,9 @@ to feed a browser:
 - [x] **1. Vue 3 project setup** (#17) — Vite + Vue 3 + Tailwind under `frontend/`, Tailwind theme
       carrying DESIGN.md's palette tokens and the Space Grotesk / Hanken Grotesk pairing
       (self-hosted via @fontsource, per DESIGN.md §3, since the build is local-only) ✅ Vite 8 + Vue 3.5 + Tailwind v4 (CSS-first `@theme`); all 9 palette tokens, both families, `--container-measure`, the three §7 keyframes, and the non-negotiable `prefers-reduced-motion` reset live in `src/style.css`; `npm run build` clean, fonts bundled locally (no Google Fonts request)
-- [ ] **2. Core chat UI components** (#18) — message list (user bubble vs. bubble-less agent
+- [x] **2. Core chat UI components** (#18) — message list (user bubble vs. bubble-less agent
       prose), composer + send action, and the status-indicator component with
-      done/active/pending step states
+      done/active/pending step states ✅ Components match `design/mockup.html` (verified by screenshot at 1280/561/540px). Answer text is parsed into DESIGN.md §5 blocks (lede + paragraphs + at most one figure, via a `[figure: value | caption]` marker) rather than the backend returning JSON, so a malformed field can never cost the whole reply. Custom `wide:` breakpoint at 561px because Tailwind's `sm:` would fire 80px early. Fixed a Vue reactivity bug where mutating the pushed (raw) turn object never re-rendered.
 - [ ] **3. Wire frontend to the backend** (#19) — backend: SSE `/chat/stream` emitting tool-call
       step events + CORS for the Vite dev origin + dev mock mode; frontend: send a message,
       stream status steps, render the answer
@@ -109,3 +109,7 @@ to feed a browser:
 
 ## Phase 5 — Polish & Demo Readiness
 _Not started._
+
+**Open design gap (task 2):** DESIGN.md has no empty state — `design/mockup.html` shows an
+in-progress conversation, so first load is a blank thread above the composer. Left blank
+rather than invented, since the design is locked. Needs a decision before the PR.
