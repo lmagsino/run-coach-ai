@@ -6,4 +6,6 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: { port: 5173 },
+  // e2e/ is driven by `npm run e2e` against a running app, not by vitest.
+  test: { include: ['src/**/*.{test,spec}.js'] },
 })

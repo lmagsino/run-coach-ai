@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lmagsino/run-coach-ai/backend/internal/api"
 	"github.com/lmagsino/run-coach-ai/backend/internal/config"
 	"github.com/lmagsino/run-coach-ai/backend/internal/db"
@@ -22,13 +23,22 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	ctx := context.Background()
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
-	if err != nil {
-		log.Fatalf("connect database: %v", err)
+	// Mock mode answers without touching Postgres — no token lookup, no history
+	// persistence — so requiring a running database would make frontend work
+	// depend on infrastructure it never uses.
+	var pool *pgxpool.Pool
+	if cfg.MockMode {
+		log.Println("mock mode: skipping the database connection")
+	} else {
+		ctx := context.Background()
+		p, err := db.NewPool(ctx, cfg.DatabaseURL)
+		if err != nil {
+			log.Fatalf("connect database: %v", err)
+		}
+		pool = p
+		defer pool.Close()
+		log.Println("connected to database")
 	}
-	defer pool.Close()
-	log.Println("connected to database")
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

@@ -315,3 +315,28 @@ func TestRequestWithoutHistoryIsValid(t *testing.T) {
 		t.Fatalf("status: got %d, want 200 (body %q)", rec.Code, rec.Body.String())
 	}
 }
+
+// Mock mode runs with no database, so /healthz must answer instead of panicking
+// on a nil pool — and must not claim the database is "up" when there isn't one.
+func TestHealthzWithoutADatabase(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	mockServer(t).Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", rec.Code)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got["status"] != "ok" {
+		t.Errorf("status: got %q, want ok", got["status"])
+	}
+	if got["db"] == "up" {
+		t.Error(`db reported "up" with no database connected`)
+	}
+	if !strings.Contains(got["db"], "skipped") {
+		t.Errorf("db: got %q, want it to say skipped", got["db"])
+	}
+}
