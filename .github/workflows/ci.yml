@@ -1,0 +1,67 @@
+name: CI
+
+# Everything here runs without credentials, a database, or Docker — the same
+# property that lets Phases 2-4 be built and tested before any account exists.
+# If a check ever needs a secret, it belongs in a separate workflow, not here.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      # Formatting is a hard gate rather than advice: gofmt has one answer, so a
+      # diff here is always an omission.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      # -count=1 defeats the test cache, so a green run always means the tests
+      # actually executed against this commit.
+      - name: go test
+        run: go test -count=1 ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `ci` not `install`: it installs exactly the committed lockfile and fails
+      # if package.json and the lockfile disagree.
+      - name: npm ci
+        run: npm ci
+
+      - name: unit tests
+        run: npm test
+
+      - name: build
+        run: npm run build

@@ -19,6 +19,19 @@ const FIGURE_RE = /^\[figure:\s*([^|\]]+?)\s*\|\s*([^\]]+?)\s*\]$/i
 // treatment exists for, so past this length the first paragraph stays body copy.
 const MAX_LEDE_LENGTH = 120
 
+// Matches a figure marker, or returns null so the caller renders the line as
+// prose instead. Both halves must have real content: the regex's value group can
+// otherwise be satisfied by the whitespace before the pipe, which would render an
+// empty pull-quote with a caption floating beside it.
+function matchFigure(chunk) {
+  const m = chunk.match(FIGURE_RE)
+  if (!m) return null
+  const value = m[1].trim()
+  const caption = m[2].trim()
+  if (!value || !caption) return null
+  return { value, caption }
+}
+
 /**
  * @param {string} answer Raw answer text from the backend.
  * @returns {Array<{type: 'lede'|'p'}|{type: 'figure', value: string, caption: string}>}
@@ -33,13 +46,13 @@ export function parseAnswer(answer) {
   let sawFigure = false
 
   for (const chunk of chunks) {
-    const figure = chunk.match(FIGURE_RE)
+    const figure = matchFigure(chunk)
     if (figure) {
       // DESIGN.md §5: max one per answer. If the model emits more, later ones
       // are dropped rather than rendered — the treatment only reads as emphasis
       // when it is rare.
       if (!sawFigure) {
-        blocks.push({ type: 'figure', value: figure[1], caption: figure[2] })
+        blocks.push({ type: 'figure', value: figure.value, caption: figure.caption })
         sawFigure = true
       }
       continue

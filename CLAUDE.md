@@ -84,7 +84,8 @@ curl -sN localhost:8080/chat/stream -d '{"question":"am I overtraining?"}'
 curl -s localhost:8080/sources   # {"sources":["strava"],"mock":false}
 
 # Credential-free run for frontend work: canned answers for the five spec §4
-# questions, no Strava token or Anthropic key needed.
+# questions. Needs no Strava token, no Anthropic key, and no Postgres — mock mode
+# skips the database connection entirely, so /healthz reports db:"skipped".
 RUNCOACH_MOCK=1 go run ./cmd/server
 ```
 
@@ -141,8 +142,33 @@ Things worth knowing before touching this:
 cd frontend
 npm install
 npm run dev        # http://localhost:5173
+npm test           # vitest, unit tests for src/lib (no browser, no backend)
 npm run build      # production build into dist/
 ```
+
+`src/lib` holds the logic worth testing — the answer parser, the step-label map,
+and the thread/history builder — and it is all pure functions for that reason. CI
+(`.github/workflows/ci.yml`) runs gofmt, go vet, `go test`, `npm test` and the
+build on every push and PR; none of it needs credentials, Postgres or Docker.
+
+There is also a browser walkthrough, which is **not** in CI because it needs a
+browser and a running backend. Run it by hand before merging UI changes — it is
+what caught the bugs unit tests can't see (a Vue reactivity fault where nothing
+re-rendered, a send button faded at rest, status steps indistinguishable on
+failure):
+
+```bash
+cd backend && RUNCOACH_MOCK=1 go run ./cmd/server   # terminal 1
+cd frontend && npm run dev                          # terminal 2
+cd frontend && npm run e2e                          # terminal 3
+```
+
+It drives the five spec §4 questions, the multi-turn follow-up, both failure paths
+and the overflow sweep. Needs a Chromium (`npx playwright install chromium`, or it
+falls back to an installed Chrome). **If it reports the header as `STRAVA` with no
+`MOCK DATA`, a non-mock server is holding :8080** — `go run` spawns a temp binary
+that `pkill -f cmd/server` does not match, so kill it with
+`lsof -nP -iTCP:8080 -sTCP:LISTEN -t | xargs kill`.
 
 The backend must be running on :8080 for the app to do anything. For a
 credential-free run, start it in mock mode:
