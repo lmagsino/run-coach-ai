@@ -142,5 +142,53 @@ Strava-only setup must not be told the coach can see sleep and HRV.
 
 ---
 
-## Phase 5 — Polish & Demo Readiness
-_Not started._
+## Phase 5 — Live Verification & Polish
+
+The final phase, and the first one with real credentials. Everything in Phases 2–4 was
+written and verified against mocks, stubs and canned answers; this phase connects the
+system to a real Strava account, a real Garmin account and the real Claude API, and finds
+out whether the cross-source value proposition actually holds up on real data. See
+`running-agent-feature-spec.md` §11 (Phase 5).
+
+Carries the live-verification debts logged as deferred by Phases 2, 3 and 4:
+- Phase 2: real Strava OAuth token exchange, real `list_activities` over MCP, a real Claude answer.
+- Phase 3: Garmin container built + authenticated, real sleep/HRV data, a real cross-source answer.
+- Phase 4: `RUNCOACH_MOCK` off, the five spec §4 questions re-walked through the UI against real data.
+
+Two things to know going in:
+- **`backend/.env` is entirely placeholders and stale** — it predates Phase 3/4, so it has no
+  `GARMIN_*`, `ALLOWED_ORIGIN` or `RUNCOACH_MOCK` entries. Task 1 rebuilds it from `.env.example`.
+- **Agent behaviour is unverified, not broken.** The stub tests prove tool namespacing, routing
+  and each source-selection plan; what they cannot prove is whether the real model picks the
+  right sources for a real question. Task 4 is the first time that gets tested.
+
+### Setup (Step 0)
+- [x] Create `phase-5-live-verification` branch off main
+- [x] Add this Phase 5 section to `PROGRESS.md`
+- [x] Create one `phase-5`-labeled GitHub issue per task below (issues #24–#29)
+
+### Tasks
+- [ ] **1. Credentials setup** (#24) — register a Strava API app (client ID/secret), settle the Garmin
+      account question (personal vs. dedicated demo, per spec §10) with email/password + MFA ready,
+      confirm an Anthropic API key, and rebuild `backend/.env` from the current `.env.example`
+- [ ] **2. Strava live verification** (#25) — run the real OAuth flow end to end, confirm a valid access
+      token is stored and refreshes, then prove `list_activities` returns this athlete's real
+      activities over MCP (`go run ./cmd/strava-check`)
+- [ ] **3. Garmin live verification** (#26) — `docker compose build`, run the one-time interactive
+      `garmin-mcp-auth` login, confirm tokens cache in the volume and survive a restart, then call
+      the Phase 3 client against real data. Diff `mcpclient.DefaultGarminTools` against what the
+      live container actually reports — unrecognized names are ignored *silently*
+- [ ] **4. Full end-to-end test with real data** (#27) — `RUNCOACH_MOCK` off, walk the five spec §4
+      questions through the UI, especially the cross-source ones ("does my sleep affect my pace",
+      "am I overtraining"). Record for each: which sources the agent chose, whether the answer is
+      grounded in what the tools returned, and any wrong-tool or ungrounded-claim failures
+- [ ] **5. Fix rough edges surfaced by real data** (#28) — prompt/grounding adjustments where answers
+      aren't anchored in tool output, plus UI edge cases real data exposes (very long answers,
+      empty date ranges, a source returning nothing, tool failures mid-stream)
+- [ ] **6. Prepare demo format** (#29) — decide recording vs. live walkthrough vs. deployed link
+      (deployment is optional per spec §7.1/§9), capture the five questions working end to end,
+      and write the project README: overview, screenshots/recording, architecture summary
+
+### Finalize
+- [ ] Merge `phase-5-live-verification` → main via PR
+- [ ] Mark the project complete: final state, what's demo-ready, what's out of scope per spec §9
