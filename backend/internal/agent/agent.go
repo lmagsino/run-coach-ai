@@ -445,7 +445,9 @@ func callTool(ctx context.Context, ref toolRef, rawArgs string) (string, error) 
 		return fmt.Sprintf("tool error: %v", err), err
 	}
 	text := contentText(res)
-	if res.IsError {
+	if res.IsError || mcpclient.LooksLikeError(text) {
+		// The model still sees the text, so it can say what it could not
+		// read; the step and the Garmin state record the failure.
 		return text, fmt.Errorf("%s tool %q reported an error", ref.source, ref.tool)
 	}
 	return text, nil

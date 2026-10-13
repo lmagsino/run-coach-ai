@@ -8,7 +8,7 @@
 # So compose covers the two one-off operations, both of which happen once
 # on the laptop (Phase 8 sets GARMIN_MCP_COMMAND in backend/.env afterwards):
 #
-#   docker compose build                                     # build the image
+#   docker compose build garmin-mcp                          # build the image
 #   docker compose --profile auth run --rm garmin-mcp-auth   # interactive login
 #
 # Requires Compose v2.24+ (for `env_file: required: false`).

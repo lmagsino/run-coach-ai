@@ -9,9 +9,21 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// LooksLikeError reports whether a tool result that upstream marked as a
+// success is really a failure. garmin_mcp returns most failures as ordinary
+// text ("Error retrieving user profile: Garmin login failed. ...") with
+// is_error false, so a caller that trusts the flag would count a dead login
+// as a clean read.
+func LooksLikeError(text string) bool {
+	t := strings.TrimSpace(text)
+	return strings.HasPrefix(t, "Error") || strings.HasPrefix(t, "ERROR") ||
+		strings.Contains(t, "Garmin login failed") || strings.Contains(t, "OAuth tokens not found")
+}
 
 // SourceGarmin names the one data source. It is also the prefix the agent uses
 // to namespace tool names (garmin__get_sleep_data), so it must stay short and

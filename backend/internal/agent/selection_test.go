@@ -188,6 +188,30 @@ func TestAnswerMarksFailedToolCall(t *testing.T) {
 	}
 }
 
+// garmin_mcp reports most failures as plain text with is_error false; the
+// loop must still count the call as failed.
+func TestTextualToolErrorIsMarkedFailed(t *testing.T) {
+	session, _ := startStub(t, "garmin-mcp",
+		stubTool{name: "get_sleep_data", description: "Nightly sleep.",
+			result: "Error retrieving sleep data: Garmin login failed. Run 'garmin-mcp-auth' to authenticate, then restart the server."},
+	)
+	client, model := startFakeModel(t,
+		fakeTurn{ToolUses: []fakeToolUse{{Name: "garmin__get_sleep_data"}}},
+		fakeTurn{Text: "I could not read your sleep data."},
+	)
+	ag := New(client, "test-model", Source{Name: mcpclient.SourceGarmin, Session: session})
+	result, err := ag.Answer(context.Background(), "how did I sleep?")
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if len(result.ToolCalls) != 1 || !result.ToolCalls[0].Failed {
+		t.Fatalf("tool calls: got %+v, want one failed call", result.ToolCalls)
+	}
+	if body := model.Requests()[1].Body; !strings.Contains(body, "Garmin login failed") {
+		t.Errorf("the model did not see the error text:\n%s", body)
+	}
+}
+
 // The loop must not spin forever if the model keeps asking for tools.
 func TestAnswerGivesUpAfterMaxTurns(t *testing.T) {
 	gateway, garmin, _, _ := stubbedSources(t)

@@ -97,3 +97,21 @@ func TestChildEnvNeverCarriesGarminCredentials(t *testing.T) {
 		}
 	}
 }
+
+// Upstream reports most failures as plain text with is_error false.
+func TestLooksLikeError(t *testing.T) {
+	for _, s := range []string{
+		"Error retrieving user profile: Garmin login failed. Run 'garmin-mcp-auth' to authenticate, then restart the server.",
+		"  Error fetching sleep data: 429 Client Error",
+		"OAuth tokens not found and no interactive terminal available.",
+	} {
+		if !LooksLikeError(s) {
+			t.Errorf("%q should read as an error", s)
+		}
+	}
+	for _, s := range []string{`{"displayName":"leo"}`, "[]", "No activities found for that range (an empty result is not an error)"} {
+		if LooksLikeError(s) {
+			t.Errorf("%q should not read as an error", s)
+		}
+	}
+}

@@ -125,7 +125,9 @@ func probe(ctx context.Context, session *mcp.ClientSession) (string, error) {
 			text.WriteString(tc.Text)
 		}
 	}
-	if res.IsError {
+	// Upstream answers a dead login as ordinary text with is_error false, so
+	// the flag alone would store a bundle that does not work.
+	if res.IsError || mcpclient.LooksLikeError(text.String()) {
 		return "", Classify(errors.New(text.String()))
 	}
 	return displayName(text.String()), nil
