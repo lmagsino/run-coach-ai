@@ -101,8 +101,13 @@ func TestChatsAreScopedToTheRunner(t *testing.T) {
 			}
 
 			msgs, err := s.ListMessages(ctx, 1, c.ID)
-			if err != nil || len(msgs) != 2 || msgs[1].Role != "assistant" || string(msgs[1].Chart) != `{"kind":"bar"}` {
+			if err != nil || len(msgs) != 2 || msgs[1].Role != "assistant" {
 				t.Fatalf("messages: %+v, %v", msgs, err)
+			}
+			// Postgres re-serialises JSONB with its own spacing, so compare the
+			// value, not the bytes.
+			if compact(t, msgs[1].Chart) != `{"kind":"bar"}` || !strings.Contains(compact(t, msgs[1].ToolCalls), `"get_sleep_data"`) {
+				t.Errorf("stored JSON: chart %s, tool_calls %s", msgs[1].Chart, msgs[1].ToolCalls)
 			}
 			chats, _ := s.ListChats(ctx, 1)
 			if len(chats) != 1 || chats[0].Title != "Sleep vs pace" {
@@ -209,6 +214,16 @@ func TestUsageAccumulatesPerDay(t *testing.T) {
 			}
 		})
 	}
+}
+
+func compact(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatalf("stored JSON is not JSON: %s", raw)
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
 }
 
 // Every Postgres statement that touches a runner's table must name runner_id,
