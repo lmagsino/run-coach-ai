@@ -61,9 +61,9 @@ async function* readEvents(response) {
  * resolve (spec §5).
  *
  * @param {string} question
- * @param {{onStep: Function, onAnswer: Function, history?: Array<{question: string, answer: string}>}} handlers
+ * @param {{onStep: Function, onChart?: Function, onAnswer: Function, history?: Array<{question: string, answer: string}>}} handlers
  */
-export async function streamChat(question, { onStep, onAnswer, history = [] }) {
+export async function streamChat(question, { onStep, onChart, onAnswer, history = [] }) {
   let res
   try {
     res = await fetch(`${BASE}/chat/stream`, {
@@ -95,6 +95,9 @@ export async function streamChat(question, { onStep, onAnswer, history = [] }) {
   for await (const { name, data } of readEvents(res)) {
     if (name === 'step') {
       onStep({ key: `${data.source}/${data.tool}`, source: data.source, tool: data.tool, state: data.state })
+    } else if (name === 'chart') {
+      // Already validated by the backend; the card is held until the answer.
+      onChart?.(data)
     } else if (name === 'answer') {
       onAnswer(data.answer, data.sources ?? [])
     } else if (name === 'error') {

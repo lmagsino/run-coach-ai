@@ -52,6 +52,7 @@ watch(
           v-else
           :status="turn.status"
           :blocks="turn.blocks"
+          :chart="turn.chart"
           :steps="turn.steps"
           :error="turn.error"
         />

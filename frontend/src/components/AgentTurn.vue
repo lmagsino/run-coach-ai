@@ -7,12 +7,17 @@
 // on completion the steps are replaced by the answer; on failure, by the error.
 import StatusSteps from './StatusSteps.vue'
 import FigurePullQuote from './FigurePullQuote.vue'
+import ChartCard from './ChartCard.vue'
 
 defineProps({
   // 'working' | 'complete' | 'error'
   status: { type: String, required: true },
   blocks: { type: Array, default: () => [] },
   steps: { type: Array, default: () => [] },
+  // The one validated chart the reply carries, or null. Rendered only with
+  // the prose, never before it (ADR 0009): a card without its answer would be
+  // a claim with nothing to back it.
+  chart: { type: Object, default: null },
   error: { type: String, default: '' },
 })
 </script>
@@ -35,6 +40,7 @@ defineProps({
     </p>
 
     <template v-else>
+      <ChartCard v-if="chart" :spec="chart" />
       <template v-for="(block, i) in blocks" :key="i">
         <FigurePullQuote
           v-if="block.type === 'figure'"

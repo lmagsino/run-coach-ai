@@ -11,7 +11,7 @@ let nextId = 0
 const newId = () => `turn-${nextId++}`
 
 /**
- * @param {(question: string, handlers: {onStep: Function, onAnswer: Function, history: Array}) => Promise<void>} transport
+ * @param {(question: string, handlers: {onStep: Function, onChart: Function, onAnswer: Function, history: Array}) => Promise<void>} transport
  */
 export function useChat(transport) {
   const turns = ref([])
@@ -48,6 +48,9 @@ export function useChat(transport) {
       // what gets replayed as history; reassembling it from blocks would lose
       // the figure marker.
       answerText: '',
+      // The chart arrives before the answer and is held until the answer does,
+      // so the card and the prose appear together.
+      chart: null,
       error: '',
     })
     // Read the turn back out of the ref rather than keeping the object that was
@@ -67,6 +70,10 @@ export function useChat(transport) {
       agentTurn.steps.push({ id: key, label: stepLabel({ source, tool }), state })
     }
 
+    const onChart = (spec) => {
+      agentTurn.chart = spec
+    }
+
     const onAnswer = (answer) => {
       agentTurn.answerText = answer
       agentTurn.blocks = parseAnswer(answer)
@@ -74,7 +81,7 @@ export function useChat(transport) {
     }
 
     try {
-      await transport(question, { onStep, onAnswer, history: prior })
+      await transport(question, { onStep, onChart, onAnswer, history: prior })
       // A transport that finished without ever delivering an answer would
       // otherwise leave the status steps pulsing forever, which reads as "still
       // working" when nothing is.

@@ -6,16 +6,16 @@
 - [x] 5.3 Database optional
 - [x] 5.4 Garmin client: pin bump, read-surface filter in Go, child env from scratch
 - [x] 5.5 Garmin-only prompt, Opus 5.5, effort, caching
-- [ ] Checkpoint: tests and CI green; mock mode Garmin-only; PR merged
+- [x] Checkpoint: tests green; mock mode Garmin-only; browser walkthrough passes (PR merge is Leo's)
 
 ## Phase 6: Charts (phase-6-charts)
-- [ ] 6.1 `internal/chart` spec and validator
-- [ ] 6.2 Virtual `coach` source in the agent
-- [ ] 6.3 SSE `chart` event and mock scenarios
-- [ ] 6.4 Prompt rules for charts
-- [ ] 6.5 `lib/chart.js`
-- [ ] 6.6 `ChartCard.vue`
-- [ ] Checkpoint: both chart scenarios render; invalid drops; PR merged
+- [x] 6.1 `internal/chart` spec and validator
+- [x] 6.2 Virtual `coach` source in the agent
+- [x] 6.3 SSE `chart` event and mock scenarios
+- [x] 6.4 Prompt rules for charts
+- [x] 6.5 `lib/chart.js`
+- [x] 6.6 `ChartCard.vue`
+- [x] Checkpoint: both chart scenarios render at 1280/561/360; invalid drops (PR merge is Leo's)
 
 ## Phase 7: Shell (phase-7-shell)
 - [ ] 7.1 Fresh migrations and the scoped store

@@ -6,10 +6,11 @@ import { useChat } from './useChat.js'
 // model just loses the thread. Hence the coverage.
 
 // A transport that records what it was handed and answers immediately.
-function recordingTransport(answer = 'An answer.') {
+function recordingTransport(answer = 'An answer.', chart = null) {
   const calls = []
-  const transport = async (question, { onStep, onAnswer, history }) => {
+  const transport = async (question, { onStep, onChart, onAnswer, history }) => {
     calls.push({ question, history })
+    if (chart) onChart(chart)
     onStep({ key: 'garmin/get_sleep_data', source: 'garmin', tool: 'get_sleep_data', state: 'active' })
     onStep({ key: 'garmin/get_sleep_data', source: 'garmin', tool: 'get_sleep_data', state: 'done' })
     onAnswer(answer)
@@ -195,5 +196,29 @@ describe('busy', () => {
     })
     await send('q')
     expect(busy.value).toBe(false)
+  })
+
+  it('holds the chart on the turn and keeps the turn working until the answer', async () => {
+    const chart = { kind: 'bar', title: 'Weekly km' }
+    let seenWhileWorking
+    const transport = async (q, { onChart, onAnswer }) => {
+      onChart(chart)
+      seenWhileWorking = { chart: turns.value[1].chart, status: turns.value[1].status }
+      onAnswer('Prose.')
+    }
+    const { turns, send } = useChat(transport)
+    await send('q')
+    // ADR 0009: the card never renders before its prose, so the turn stays
+    // "working" (steps shown) even though the chart has already arrived.
+    expect(seenWhileWorking).toEqual({ chart, status: 'working' })
+    expect(turns.value[1].status).toBe('complete')
+    expect(turns.value[1].chart).toEqual(chart)
+  })
+
+  it('leaves chart null when the transport sends none', async () => {
+    const { transport } = recordingTransport()
+    const { turns, send } = useChat(transport)
+    await send('q')
+    expect(turns.value[1].chart).toBeNull()
   })
 })

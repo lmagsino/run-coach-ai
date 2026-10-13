@@ -24,13 +24,14 @@ const SHOTS = process.env.E2E_SHOTS ?? null // set to a directory to save screen
 
 // The five example questions from the design spec. Their tool plans differ
 // (two, three and four Garmin tools), so the status UI is exercised across
-// several shapes rather than one.
+// several shapes rather than one. Two carry a chart; the half-marathon one
+// carries a deliberately invalid chart that must drop while the prose renders.
 const SPEC_QUESTIONS = [
-  'Does my sleep actually affect my pace? Show me the pattern.',
-  'Am I overtraining right now?',
-  'How did my last three training blocks compare?',
-  "I have a half marathon in 10 weeks. Am I on track, given how recovered I've been?",
-  'Why has my body battery been so low this week?',
+  ['Does my sleep actually affect my pace? Show me the pattern.', 'scatter'],
+  ['Am I overtraining right now?', null],
+  ['How did my last three training blocks compare?', 'bar'],
+  ["I have a half marathon in 10 weeks. Am I on track, given how recovered I've been?", null],
+  ['Why has my body battery been so low this week?', null],
 ]
 
 const problems = []
@@ -87,10 +88,10 @@ console.log('header:', header.replace(/\n/g, ' | '))
 if (!/garmin/i.test(header)) fail('header does not name the connected source')
 
 // ------------------------------------------------- the five spec questions
-for (const question of SPEC_QUESTIONS) {
+for (const [question, chartKind] of SPEC_QUESTIONS) {
   await ask(question)
 
-  const turn = page.locator('main .max-w-full').last()
+  const turn = page.locator('main div.animate-turn-in').last()
   const text = await turn.innerText()
   if (text.trim().length < 40) fail(`answer for "${question.slice(0, 30)}…" looks empty`)
 
@@ -98,7 +99,20 @@ for (const question of SPEC_QUESTIONS) {
   const figures = await turn.locator('.border-accent').count()
   if (figures > 1) fail(`"${question.slice(0, 30)}…" rendered ${figures} figures, max is 1`)
 
-  console.log(`  ok  ${figures ? 'figure' : 'no figure'}  ${question.slice(0, 52)}…`)
+  // At most one chart card, only where the scenario carries a valid one, and
+  // its data table opens.
+  const cards = turn.locator('figure[role="group"]')
+  const n = await cards.count()
+  if (chartKind && n !== 1) fail(`"${question.slice(0, 30)}…" rendered ${n} chart cards, want 1`)
+  if (!chartKind && n !== 0) fail(`"${question.slice(0, 30)}…" rendered ${n} chart cards, want none`)
+  if (chartKind && n === 1) {
+    if ((await cards.locator('svg').count()) !== 1) fail('chart card has no svg')
+    await cards.getByRole('button', { name: 'View data' }).click()
+    const rows = await cards.locator('tbody tr').count()
+    if (rows < 5) fail(`data table has ${rows} rows`)
+  }
+
+  console.log(`  ok  ${figures ? 'figure' : 'no figure'}  ${chartKind ? chartKind + ' chart' : 'no chart'}  ${question.slice(0, 48)}…`)
 }
 await shot('walkthrough-thread')
 
@@ -119,7 +133,7 @@ if (followUp.history?.some((h) => h.question === 'What about the week before tha
 // -------------------------------------------------- failure: unreachable backend
 await page.route('**/chat/stream', (route) => route.abort('failed'))
 await ask('does this fail gracefully?')
-const netErr = await page.locator('main .max-w-full').last().innerText()
+const netErr = await page.locator('main div.animate-turn-in').last().innerText()
 console.log('unreachable backend →', JSON.stringify(netErr.split('\n').pop()))
 if (/failed to fetch/i.test(netErr)) fail('raw "Failed to fetch" leaked into the UI')
 if (!/reach the coach/i.test(netErr)) fail('unreachable backend produced no useful message')
@@ -143,7 +157,7 @@ await page.route('**/chat/stream', (route) =>
   }),
 )
 await ask('what does a dead source look like?')
-const sseErr = await page.locator('main .max-w-full').last().innerText()
+const sseErr = await page.locator('main div.animate-turn-in').last().innerText()
 console.log('backend error event →', JSON.stringify(sseErr.split('\n').pop()))
 if (!sseErr.includes('garmin tool failed')) fail("the backend's error message was not surfaced")
 await shot('walkthrough-error')

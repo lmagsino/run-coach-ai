@@ -43,20 +43,20 @@ Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
 
 ## Phase 6: Charts
 
-- [ ] 6.1 `internal/chart`: `Spec` (kind line|bar|scatter, title, labels, units, data name,
+- [x] 6.1 `internal/chart`: `Spec` (kind line|bar|scatter, title, labels, units, data name,
       1–2 series of 5–120 points, caption, optional `partial` on a point), `Validate` naming
       the failing field, `ToolDefinition()` (ADR 0005).
-- [ ] 6.2 Agent: built-in source `coach` with `show_chart`; valid call → `Result.Chart`
+- [x] 6.2 Agent: built-in source `coach` with `show_chart`; valid call → `Result.Chart`
       and an `Event{Kind: chart}`; second call refused readably; invalid call returns the
       error and no event; `tool_choice` stays `auto`.
-- [ ] 6.3 API: SSE `chart` event after the steps and before `answer`; `chart` field on
+- [x] 6.3 API: SSE `chart` event after the steps and before `answer`; `chart` field on
       `POST /chat`; two mock scenarios with charts (sleep vs pace scatter, training-block
       bars with a partial week) and one with an invalid spec that must drop.
-- [ ] 6.4 Prompt: a "Charts" section (one at most, patterns and relationships only, never a
+- [x] 6.4 Prompt: a "Charts" section (one at most, patterns and relationships only, never a
       single number, reshape yourself, pace in s/km, two series only on one unit).
-- [ ] 6.5 `frontend/src/lib/chart.js`: pure layout (nice ticks, scales, m:ss pace, trend
+- [x] 6.5 `frontend/src/lib/chart.js`: pure layout (nice ticks, scales, m:ss pace, trend
       line, dashed second series with direct labels, faint partial bars) with vitest.
-- [ ] 6.6 `ChartCard.vue`: SVG in the Field Notes tokens, title, Garmin data used, caption,
+- [x] 6.6 `ChartCard.vue`: SVG in the Field Notes tokens, title, Garmin data used, caption,
       "View data" table with Copy; shown above the prose only once `answer` arrives
       (ADR 0009); 320 px up; reduced motion respected.
 - [ ] Checkpoint: tests and CI green; both chart scenarios render in mock mode at 1280,

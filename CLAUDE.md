@@ -92,6 +92,18 @@ asserts both markers. The system prompt is Garmin-only: grounding rules, a twelv
 category map pointing at the right tool per question type, the `[figure: …]` marker rule, and
 the current date. `maxTurns` is 8; `maxPriorTurns` is 6.
 
+### Charts (ADR 0005)
+`internal/chart` holds the `show_chart` schema and `Validate` (kind line|bar|scatter, 5–120
+points, one series except line with two on one unit, every error names its field). The agent
+appends it as `coach__show_chart` under the built-in `coach` source and answers it in-process:
+first valid call kept and emitted as `EventChart`, a second refused readably, an invalid one
+returned as a tool error so the prose continues. The stream sends `event: chart` after the
+steps and before `answer`; `POST /chat` carries `chart` (or null). Mock scenarios carry
+specs through the same validation, one deliberately invalid to prove the drop path. The
+frontend holds the chart until the answer arrives (`useChat`), then `ChartCard.vue` draws it
+from `lib/chart.js` (pure layout: nice ticks, m:ss pace, dashed second series with direct
+labels, faint partial bars, least-squares trend) with a "View data" table.
+
 ### Run locally
 ```bash
 cd backend
@@ -155,7 +167,8 @@ See `backend/.env.example`. Summary:
 | `RUNCOACH_MOCK` | **Dev only.** `1`/`true`/`yes`/`on` ⇒ canned answers, no credentials, no database |
 
 ## Current phase
-**Phase 5, Garmin core** on `phase-5-garmin-core`: Strava removed, database optional, pin
-bumped, read surface filtered in Go, Garmin-only prompt on Opus 5.5. Next: Phase 6 charts,
-Phase 7 shell, Phase 8 deploy on free tiers and the live pass. Track in `tasks/todo.md`.
-Nothing has run against a live Garmin account yet; Phase 8 is where that happens.
+Phases 5 (Garmin core) and 6 (charts) are built against mocks and tests. Next: Phase 7 shell
+(login, token paste, saved chats, sidebar), then Phase 8 deploy on free tiers and the live
+pass. Track in `tasks/todo.md`. Nothing has run against a live Garmin account yet; Phase 8 is
+where that happens. `npm run e2e` (browser walkthrough on mock mode) and `node e2e/shots.mjs`
+are the manual checks before merging UI changes.
