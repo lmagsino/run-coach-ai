@@ -1,0 +1,26 @@
+# Render blueprint: one free web service built from the Dockerfile (ADR 0007).
+# Secrets are set in the dashboard, never here. Pair it with a Neon free
+# Postgres and put its connection string in DATABASE_URL.
+services:
+  - type: web
+    name: runcoach
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-opus-5-5
+      - key: ANTHROPIC_EFFORT
+        value: medium
+      - key: RUNCOACH_OWNER_PASSWORD_HASH
+        sync: false
+      - key: RUNCOACH_TOKEN_KEY
+        sync: false
+      - key: GARMIN_MCP_COMMAND
+        value: garmin-mcp

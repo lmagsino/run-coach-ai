@@ -1,0 +1,9 @@
+.git
+**/node_modules
+frontend/dist
+backend/internal/web/dist
+backend/.env
+docs
+design
+tasks
+*.md
