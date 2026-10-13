@@ -151,7 +151,7 @@ curl -s localhost:8080/chat -d '{"question":"how did I sleep this week?"}'
 
 ### Garmin MCP container (local dev)
 `deploy/garmin-mcp/Dockerfile` installs upstream at `GARMIN_MCP_REF` (currently `43b0c5b`,
-12 Oct 2026). `docker compose build`, then `docker compose --profile auth run --rm
+12 Oct 2026). `docker compose build garmin-mcp`, then `docker compose --profile auth run --rm
 garmin-mcp-auth` once, interactively (email, password, MFA), which writes the token bundle
 into the named volume `run-coach-ai-garmin-tokens` (about six months). Compose never runs the
 server itself; the backend spawns it per reply. When the tokens expire, the first reply fails

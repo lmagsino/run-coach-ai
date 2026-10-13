@@ -79,6 +79,7 @@ async function remove() {
         <li>
           On your laptop, sign in once (email, password, MFA):
           <pre class="mt-1 mb-2 overflow-x-auto rounded-lg border border-line bg-paper px-3 py-2 font-mono text-[12.5px]">cd deploy/garmin-mcp
+docker compose build garmin-mcp
 docker compose --profile auth run --rm garmin-mcp-auth</pre>
         </li>
         <li>

@@ -142,7 +142,7 @@ Then for real, locally:
 
 ```bash
 cd deploy/garmin-mcp
-docker compose build                                    # garmin_mcp at the pinned commit
+docker compose build garmin-mcp                         # garmin_mcp at the pinned commit
 docker compose --profile auth run --rm garmin-mcp-auth  # sign in once: email, password, MFA code
 
 cd ../../backend

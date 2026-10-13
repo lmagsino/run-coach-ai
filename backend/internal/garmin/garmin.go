@@ -183,8 +183,9 @@ func TokenStore(bundle string) (string, error) {
 	}
 	out := compact.String()
 	if len(out) <= 512 {
+		// Each line gets a long prefix, so even a three-key object passes 512.
 		var padded bytes.Buffer
-		if err := json.Indent(&padded, raw, "", strings.Repeat(" ", 64)); err == nil && padded.Len() > 512 {
+		if err := json.Indent(&padded, compact.Bytes(), strings.Repeat(" ", 256), " "); err == nil && padded.Len() > 512 {
 			out = padded.String()
 		}
 	}

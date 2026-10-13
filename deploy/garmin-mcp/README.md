@@ -9,7 +9,7 @@ The hosted image (root `Dockerfile`) installs the same package next to the Go bi
 directory is for the laptop:
 
 ```bash
-docker compose build                                    # the image
+docker compose build garmin-mcp                         # the image
 docker compose --profile auth run --rm garmin-mcp-auth  # sign in once: email, password, MFA
 docker run --rm -v run-coach-ai-garmin-tokens:/t alpine cat /t/garmin_tokens.b64 | pbcopy   # the bundle
 ```
