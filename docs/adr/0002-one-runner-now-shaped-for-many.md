@@ -19,5 +19,5 @@ by what we build now, so three seams are in from the first migration:
 
 ## What is deliberately not built
 
-No sign-up, no multi-runner tests, no privacy page, no gateway client. Each is a roadmap
-item in `tasks/plan.md`, costed at about seven days together.
+No sign-up, no multi-runner tests, no privacy page, no gateway client. They are the roadmap
+in `tasks/plan.md`.

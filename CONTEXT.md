@@ -102,8 +102,8 @@ example questions, with no Garmin, no model and no database. Always labelled in 
 **Live pass**:
 Walking the five example questions through the real UI against real Garmin data and the
 real model, and writing down what the coach chose, whether it was grounded, and what it
-cost. The only proof a phase works.
+cost. Happens in Phase 8, after the build phases.
 
 **Phase**:
-A unit of work with its own branch, plan file and live pass: 5 (Garmin live, Strava out),
-6 (charts), 7a (shell and hosting), 7b (polish).
+A unit of work with its own branch and PR: 5 (Garmin core), 6 (charts), 7 (shell),
+8 (deploy on free tiers and test live).

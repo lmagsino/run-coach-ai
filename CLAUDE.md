@@ -12,8 +12,7 @@ artefact and the next stage reads it rather than re-deriving it:
 | Decisions | `docs/adr/0001`–`0009` (why Strava is gone, why the server never signs in to Garmin, why charts are a tool, hosting, migrations) |
 | Terms | `CONTEXT.md` (runner, owner, token bundle, read surface, deny pattern, live pass, …) |
 | Design | `docs/superpowers/specs/2026-10-13-garmin-mcp-upgrade-and-charts-design.md` and the artifact linked at its top |
-| Plan | `tasks/plan.md` (index, risks), `tasks/todo.md` (ordered checklist), `tasks/phase-5.md`, `phase-6.md`, `phase-7a.md`, `phase-7b.md` (tasks with acceptance criteria and `Blocked by` edges) |
-| Reviews | `.factory/matrix.md` (which paths are shared or registries) |
+| Plan | `tasks/plan.md` (phases 5–8 with their tasks and done-when lines), `tasks/todo.md` (checklist) |
 
 The sections below describe the code as it is today (Phases 1–4, Strava and Garmin). Phase 5
 rewrites them; until then, where this file and the ADRs disagree, the ADRs win.

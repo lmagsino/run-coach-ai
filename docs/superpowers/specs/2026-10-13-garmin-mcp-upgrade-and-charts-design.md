@@ -1,8 +1,7 @@
 # RunCoach AI — "Ask your Garmin": personal MVP, expansion-ready
 
 Design spec, 13 Oct 2026, **revision 5**. Status: decisions recorded as ADRs, plan written, awaiting Leo's gate.
-Decisions: `docs/adr/0001`–`0009`. Terms: `CONTEXT.md`. Plan: `tasks/plan.md` and `tasks/phase-{5,6,7a,7b}.md`.
-Reach matrix for reviews: `.factory/matrix.md`.
+Decisions: `docs/adr/0001`–`0009`. Terms: `CONTEXT.md`. Plan: `tasks/plan.md` and `tasks/todo.md`.
 Full PRD, TRD and design mockups: Claude artifact https://claude.ai/artifact/MfXsK5cNaLNZGPENiA6zHt
 (tabs `#prd`, `#trd`, `#design`). This file is the repo-side record.
 
@@ -12,7 +11,8 @@ rev 4: personal MVP for Leo first, Garmin only, with the seams to add other runn
 Strava removed from product and code · **rev 5 (this): Architect and Planner pass. Token bundle
 pasted into the app instead of a laptop import command (ADR 0003); read surface filtered in Go by
 deny pattern instead of upstream's allowlist (ADR 0004); no database until Phase 7a and migrations
-restart (ADR 0008); SSE keepalive; in-flight guard; Playwright moved to Phase 6.**
+restart (ADR 0008); SSE keepalive; in-flight guard. Phases re-cut: build (5, 6, 7) first, deploy on free
+tiers and test live (8) last.**
 
 ---
 
@@ -27,7 +27,7 @@ with "View data"; owner-password login; chats saved and listed in a plain sideba
 (Render free + Neon free) so the phone can reach it; Garmin tokens imported from the laptop;
 expansion seams (`runner_id` everywhere, auth and Garmin behind interfaces).
 
-**After the MVP has been used (7b):** streaming text deltas + Stop; dark theme; suggestions on
+**After the MVP has been used (later):** streaming text deltas + Stop; dark theme; suggestions on
 an empty chat; chat search and rename; Haiku 5.5 chat titles.
 
 **Roadmap, designed for but not scheduled:** other runners via the MIT MissingMCP gateway
@@ -51,15 +51,15 @@ Done when Leo asks a question from his phone and gets a grounded answer with a c
 - R3 ≤1 chart per reply: line (1–2 series), bar, scatter; ≥5 points; never a dual axis.
 - R4 Chart card: title, units, Garmin data used, model caption, "View data" table.
 - R5 Chart never renders without its prose; invalid chart drops, prose still renders.
-- R6 Streaming deltas + Stop (7b). MVP: steps stream, reply arrives whole, as today.
+- R6 Streaming deltas + Stop (later). MVP: steps stream, reply arrives whole, as today.
 - R7 One owner login (password hash in config), session cookie, works on the phone.
 - R8 Garmin sign-in happens once on Leo's laptop (`garmin-mcp-auth`); the one-line base64 token
   bundle it writes (`~/.garminconnect_base64`) is pasted into the app's Connection screen, probed,
   and stored encrypted in Postgres. **The hosted service never signs in to Garmin; it only uses
   tokens, and the child process environment is built from scratch so it cannot.**
 - R9 Token expiry (~6 months) surfaces in the chip, the reply and `/healthz` with the fix.
-- R10–R13 Shell: sidebar by day with delete (search/rename 7b), suggestions (7b), phone drawer,
-  light theme (dark 7b), one Garmin chip (connected / tokens expired / unavailable).
+- R10–R13 Shell: sidebar by day with delete (search/rename later), suggestions (later), phone drawer,
+  light theme (dark later), one Garmin chip (connected / tokens expired / unavailable).
 - R14 Every table has `runner_id` from its first migration; the owner is row one; a scoped
   query helper is the only data access (test enforces).
 - R15 `garmin.Source` interface: `LocalSpawn` now; `GatewayHTTP` and `BYOURL` later.
@@ -143,7 +143,7 @@ allowlist names don't exist upstream: `get_heart_rate_variability_summary`→`ge
 key_version, status, connected_at, last_ok_at, expires_est_at, last_error)`,
 `chat_sessions`/`chat_messages` + `runner_id` (chart spec in its own `chart jsonb`), `audit_log`,
 `usage(runner_id, day, questions, input_tokens, cached_input_tokens, output_tokens)`.
-Written as a fresh `000001` in Phase 7a (ADR 0008); Phases 5 and 6 need no database.
+Written as a fresh `000001` in Phase 7 (ADR 0008); Phases 5 and 6 need no database.
 
 ### `show_chart` (virtual tool, source `coach`)
 
@@ -156,7 +156,7 @@ field named, no event, prose continues; persisted in `tool_calls`. `tool_choice`
 
 ### Streaming (`POST /chats/:id/stream`)
 
-MVP: `step` events then `chart` then `answer` (whole), as today plus `chart`. 7b: `delta` and
+MVP: `step` events then `chart` then `answer` (whole), as today plus `chart`. Later: `delta` and
 `done`, Stop aborts and saves partial. Card appears with the first text, never before.
 
 ### API (MVP)
@@ -180,17 +180,16 @@ Claude ≈ $0.08–0.25/question on Opus 5.5 with caching, measured in 5.4; cap 
 
 ## 4. Phases
 
+Build first, deploy and test last (`tasks/plan.md`). Phases 5–7 are code against unit tests, the
+stub MCP server and mock mode; Phase 8 is free hosting plus the live pass.
+
 | Phase | Outcome | Size |
 |---|---|---|
-| 5 | Garmin live on Leo's account; Strava removed; database optional; pin bumped to `43b0c5b`; read surface filtered in Go; live tool-diff test; Garmin-only prompt with category map; Opus 5.5 with explicit effort and caching; five questions live at medium and high (once on Sonnet 5.5); tokens and spawn time measured | ≈ 4 d |
-| 6 | Charts: `show_chart`, SSE `chart`, prompt rules, `lib/chart.js` + `ChartCard.vue` (line/bar/scatter, data table, copy), two mock scenarios, Playwright smoke in CI, live pass | ≈ 5 d |
-| 7a | **MVP shell + hosting:** fresh migrations (owner seeded, scoped helper + test), `OwnerPassword` auth, `LocalSpawn` + token paste + expiry handling, chat CRUD + cap + in-flight guard, login and connection screens, sidebar + phone drawer on the existing thread, one image with the UI embedded, Render + Neon, first question from the phone | ≈ 5 d |
-| 7b | Polish after use: streaming deltas + Stop, dark theme, suggestions, search/rename, Haiku titles, Playwright for the shell | ≈ 4 d |
-| Roadmap | Other runners: `GatewayOAuth` + `GatewayHTTP` against MissingMCP, `BYOURL`, fork gateway onto a free VM, tenancy tests, delete account, privacy page, apply to Garmin's program if it reopens | ≈ 7 d when wanted |
-
-Phase 5 first; nothing has run live yet. Phases 6 and 7a are independent after Phase 5. The
-per-phase task lists with acceptance criteria and blocking edges are in `tasks/`; issues #24–#29
-are superseded by `tasks/phase-5.md` and can be closed or re-titled when the branch opens.
+| 5 Garmin core | Strava removed; database optional; pin `43b0c5b`; read surface filtered in Go; Garmin-only prompt on Opus 5.5 with explicit effort and caching | ≈ 2 d |
+| 6 Charts | `show_chart`, SSE `chart`, prompt rules, `lib/chart.js` + `ChartCard.vue`, two mock scenarios | ≈ 3 d |
+| 7 Shell | fresh migrations with `runner_id`, owner login, token paste, saved chats + cap + in-flight guard, sidebar + phone drawer, one origin with keepalive | ≈ 4 d |
+| 8 Deploy and test | one image, Render free + Neon free, Garmin auth on the laptop and paste, live tool-diff test, five questions live from the phone and measured, Playwright smoke | ≈ 3 d |
+| Later | streaming deltas + Stop, dark theme, suggestions, search/rename, Haiku titles; other runners via the MissingMCP gateway | when wanted |
 
 ## 5. Assumptions
 
@@ -201,9 +200,6 @@ are superseded by `tasks/phase-5.md` and can be closed or re-titled when the bra
 4. Leo is the only user until he decides otherwise; no credential of anyone else is ever handled.
 5. The product does not use Garmin's name as its own and states it is not affiliated.
 
-## 6. The gate
+## 6. Status
 
-The decisions are recorded in `docs/adr/` and the plan in `tasks/`. Leo decides that the decisions
-hold (in particular ADR 0003's paste box over a laptop import command, and ADR 0004's deny pattern
-in Go) and that this is the right plan. Then Phase 5 starts on `phase-5-garmin-live`, either by
-hand or by publishing `tasks/phase-5.md` as tickets for the dev loop.
+Decisions in `docs/adr/`, plan in `tasks/plan.md`. Phase 5 is being built on `phase-5-garmin-core`.

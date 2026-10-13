@@ -142,24 +142,19 @@ Strava-only setup must not be told the coach can see sleep and HRV.
 
 ---
 
-## Phase 5 — Garmin live, Strava out (re-planned 13 Oct 2026)
+## Phases 5–8 — Garmin-only personal MVP (re-planned 13 Oct 2026)
 
-The project was re-planned on 13 Oct 2026 as a Garmin-only personal MVP with charts, an owner
-login and free hosting. The decisions are ADRs in `docs/adr/`, the terms are in `CONTEXT.md`, the
-design spec is `docs/superpowers/specs/2026-10-13-garmin-mcp-upgrade-and-charts-design.md` (rev 5)
-and the per-phase plans with acceptance criteria are in `tasks/` (`plan.md`, `todo.md`,
-`phase-5.md`, `phase-6.md`, `phase-7a.md`, `phase-7b.md`). Check tasks off in `tasks/todo.md`;
-this file keeps the one-line phase summaries.
+Re-planned on 13 Oct 2026 as a Garmin-only personal MVP with charts, an owner login and free
+hosting. Decisions: `docs/adr/`. Terms: `CONTEXT.md`. Design spec:
+`docs/superpowers/specs/2026-10-13-garmin-mcp-upgrade-and-charts-design.md` (rev 5). Plan and
+checklist: `tasks/plan.md`, `tasks/todo.md`. Build first (5, 6, 7), deploy on free tiers and test
+live last (8). Issues #24–#29 are superseded.
 
-Issues #24–#29 (the Strava-and-Garmin live verification) are superseded by `tasks/phase-5.md`.
-
-- [ ] **Phase 5** (`phase-5-garmin-live`): Strava removed, database optional, upstream pin
-      `43b0c5b`, read surface filtered in Go, Garmin-only prompt on Opus 5.5, the five questions
-      answered live and measured in `docs/live/phase-5.md`
-- [ ] **Phase 6** (`phase-6-charts`): one chart card per reply via `coach__show_chart`,
-      hand-rolled SVG, Playwright smoke in CI, live pass
-- [ ] **Phase 7a** (`phase-7a-shell-hosting`): fresh migrations with `runner_id`, owner login,
-      token paste, saved chats and sidebar, one image on Render free + Neon free, first question
-      from the phone
-- [ ] **Phase 7b** (`phase-7b-polish`): streaming deltas and Stop, dark theme, suggestions,
-      search and rename, Haiku titles, Playwright for the shell
+- [ ] **Phase 5 Garmin core** (`phase-5-garmin-core`): Strava removed, database optional, upstream
+      pin `43b0c5b`, read surface filtered in Go, Garmin-only prompt on Opus 5.5
+- [ ] **Phase 6 Charts** (`phase-6-charts`): one chart card per reply via `coach__show_chart`,
+      hand-rolled SVG, two mock scenarios
+- [ ] **Phase 7 Shell** (`phase-7-shell`): fresh migrations with `runner_id`, owner login, token
+      paste, saved chats, sidebar, phone drawer, one origin
+- [ ] **Phase 8 Deploy and test** (`phase-8-deploy`): one image on Render free + Neon free, Garmin
+      auth and paste, live pass from the phone, Playwright smoke

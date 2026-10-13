@@ -1,130 +1,129 @@
-# Implementation Plan: RunCoach AI, Garmin-only personal MVP
+# Plan: RunCoach AI, Garmin-only personal MVP
 
-Planner stage of the AI Light Factory line. Decisions live in `docs/adr/`, terms in
-`CONTEXT.md`, the product and technical design in
-`docs/superpowers/specs/2026-10-13-garmin-mcp-upgrade-and-charts-design.md` (rev 5) and
+Build first, deploy and test last. Decisions are in `docs/adr/`, terms in `CONTEXT.md`, the
+design in `docs/superpowers/specs/2026-10-13-garmin-mcp-upgrade-and-charts-design.md` and
 the visual PRD/TRD/Design/Plan at https://claude.ai/artifact/MfXsK5cNaLNZGPENiA6zHt.
 
-## Overview
+Phases 5 to 7 are code only, verified with unit tests, the stub MCP server and mock mode,
+like Phases 1 to 4 were. Phase 8 puts it on free hosting and tests it against real Garmin
+data and the real model. Each phase is one branch and one PR to `main`.
 
-Turn the mock-only Phase 1–4 codebase into a chat over Leo's own Garmin data, reachable
-from his phone, that answers in grounded prose with one chart card when a pattern is the
-point. Strava goes; the full read surface of the upstream Garmin MCP comes in; the coach
-runs on Opus 5.5; the shell gets an owner login, saved chats and a sidebar; it is hosted on
-free tiers. Every table and interface is shaped so a second runner is additive later.
+| Phase | Branch | What it builds | Size |
+|---|---|---|---|
+| 5 Garmin core | `phase-5-garmin-core` | Strava out, database optional, upstream pin bumped, read surface filtered in Go, Garmin-only prompt on Opus 5.5 with caching | ≈ 2 d |
+| 6 Charts | `phase-6-charts` | `coach__show_chart`, SSE `chart`, `lib/chart.js`, `ChartCard.vue`, two mock scenarios | ≈ 3 d |
+| 7 Shell | `phase-7-shell` | fresh migrations with `runner_id`, owner login, token paste, saved chats, sidebar, phone drawer, one origin | ≈ 4 d |
+| 8 Deploy and test | `phase-8-deploy` | one image, Render free + Neon free, Garmin tokens pasted, live pass on the five questions, Playwright smoke | ≈ 3 d |
 
-The MVP is Phases 5, 6 and 7a. Phase 7b is polish after the MVP has been used. "Other
-runners" is a roadmap section, designed for and not scheduled.
+Later, after use: streaming deltas and Stop, dark theme, suggestions, search and rename,
+Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
 
-## How the phases are organised
+## Phase 5: Garmin core
 
-Each phase has its own file in `tasks/`, its own branch, and ends with a live pass that
-the Verifier can drive. Each task in a phase file is written in the shape the dev loop's
-readiness gate expects (what to build, checkbox acceptance criteria, explicit
-`Blocked by`), so any phase can be published as tickets with
-`/mattpocock-skills:to-tickets tasks/phase-N.md` and run through `/alf:dev-loop` when
-wanted. No tickets exist yet; this is a short project and the files are the plan.
+- [ ] 5.1 Remove Strava from the backend: `cmd/strava-mcp`, `cmd/strava-check`,
+      `internal/strava`, `strava_auth.go`, `mcpclient/strava.go`, `Strava*` config, the
+      multi-source prompt rules, the Strava migration and `activity_cache`; mock scenarios
+      on Garmin tools only. Done when `grep -ri strava backend/` is empty and tests pass.
+- [ ] 5.2 Remove Strava from the frontend and docs: step labels, greeting, header, composer
+      hint; README, CLAUDE.md, feature spec, `.env.example`. Done when only ADR 0001,
+      PROGRESS history and the spec's revision note mention it.
+- [ ] 5.3 Database optional: the server starts without `DATABASE_URL`; `/healthz` says
+      `db: off` (ADR 0008).
+- [ ] 5.4 Garmin client: pin `GARMIN_MCP_REF=43b0c5b375fc1c7bd6bdbead69968dfabddec265`;
+      `deploy/garmin-mcp/tools.txt` with the 155 upstream names; `mcpclient.ReadOnly(name)`
+      deny pattern replaces `DefaultGarminTools`; `agent.buildTools` applies it; the child
+      environment is built from scratch (no `GARMIN_EMAIL`/`GARMIN_PASSWORD`, ADR 0003);
+      stub test proves a `delete_*` tool never reaches the model.
+- [ ] 5.5 Prompt and model: Garmin-only system prompt with a twelve-line category map
+      checked against `tools.txt`; `ANTHROPIC_MODEL` default `claude-opus-5-5`;
+      `ANTHROPIC_EFFORT` (default `medium`) sent on every request; `cache_control` on the
+      system prompt and the last tool, asserted by the scripted-model tests (ADR 0006).
+- [ ] Checkpoint: `go test ./...`, `npm test`, CI green; mock mode answers the five
+      questions with Garmin-only steps. PR to `main`.
 
-| Phase | File | Branch | Blocked by | Outcome | Size |
-|---|---|---|---|---|---|
-| 5 | `tasks/phase-5.md` | `phase-5-garmin-live` | nothing | Garmin live on Leo's account, Strava gone, Opus 5.5, five questions answered and measured | ≈ 4 d |
-| 6 | `tasks/phase-6.md` | `phase-6-charts` | Phase 5 merged | One chart card per reply, validated server-side, hand-rolled SVG | ≈ 5 d |
-| 7a | `tasks/phase-7a.md` | `phase-7a-shell-hosting` | Phase 5 merged (not 6) | Owner login, token paste, saved chats and sidebar, one Render service + Neon, first question from the phone | ≈ 5 d |
-| 7b | `tasks/phase-7b.md` | `phase-7b-polish` | 6 and 7a merged | Streaming deltas and Stop, dark theme, suggestions, search and rename, Haiku titles | ≈ 4 d |
+## Phase 6: Charts
 
-Phases 6 and 7a are independent and may run as two lanes once Phase 5 is merged. Before
-each phase there is a short "Step 0" of things only Leo can do (accounts, a Docker build,
-a sign-up); they are listed at the top of each phase file and are not tasks for an agent.
+- [ ] 6.1 `internal/chart`: `Spec` (kind line|bar|scatter, title, labels, units, data name,
+      1–2 series of 5–120 points, caption, optional `partial` on a point), `Validate` naming
+      the failing field, `ToolDefinition()` (ADR 0005).
+- [ ] 6.2 Agent: built-in source `coach` with `show_chart`; valid call → `Result.Chart`
+      and an `Event{Kind: chart}`; second call refused readably; invalid call returns the
+      error and no event; `tool_choice` stays `auto`.
+- [ ] 6.3 API: SSE `chart` event after the steps and before `answer`; `chart` field on
+      `POST /chat`; two mock scenarios with charts (sleep vs pace scatter, training-block
+      bars with a partial week) and one with an invalid spec that must drop.
+- [ ] 6.4 Prompt: a "Charts" section (one at most, patterns and relationships only, never a
+      single number, reshape yourself, pace in s/km, two series only on one unit).
+- [ ] 6.5 `frontend/src/lib/chart.js`: pure layout (nice ticks, scales, m:ss pace, trend
+      line, dashed second series with direct labels, faint partial bars) with vitest.
+- [ ] 6.6 `ChartCard.vue`: SVG in the Field Notes tokens, title, Garmin data used, caption,
+      "View data" table with Copy; shown above the prose only once `answer` arrives
+      (ADR 0009); 320 px up; reduced motion respected.
+- [ ] Checkpoint: tests and CI green; both chart scenarios render in mock mode at 1280,
+      561 and 360 px; the invalid one shows prose only. PR to `main`.
 
-## Architecture decisions (see `docs/adr/`)
+## Phase 7: Shell
 
-- 0001 Garmin is the only source; Strava is deleted, not disabled.
-- 0002 One runner now; `runner_id`, `auth.Provider`, `garmin.Source` and a per-runner cap from the first migration.
-- 0003 The hosted server never signs in to Garmin; the token bundle is pasted into the app and stored encrypted; the child environment is built from scratch.
-- 0004 Upstream garmin_mcp unmodified, spawned per reply; the read surface is filtered in Go by deny pattern.
-- 0005 Charts are a virtual tool validated by the backend; SVG by hand; two series, one axis.
-- 0006 Opus 5.5 with explicit effort and prompt caching; Haiku 5.5 for titles.
-- 0007 One Render free web service serves API and UI from one origin; Neon Postgres.
-- 0008 No database until Phase 7a; migrations restart at 000001.
-- 0009 The MVP reply streams steps and chart, then arrives whole; deltas in 7b.
+- [ ] 7.1 Fresh `000001` migration: `runners` (owner seeded), `sessions`,
+      `garmin_connections`, `chat_sessions`, `chat_messages`, `usage`, `audit_log`, all
+      with `runner_id`; `internal/store.Scoped` is the only data access, with a test that
+      scans for stray `pool.Query` calls (ADR 0002, 0008).
+- [ ] 7.2 Auth: `auth.Provider` + `OwnerPassword` (bcrypt hash from
+      `RUNCOACH_OWNER_PASSWORD_HASH`); cookie session (`HttpOnly; Secure; SameSite=Lax`,
+      30 days); `POST /login`, `POST /logout`, `GET /me`; login rate-limited;
+      `cmd/hash-password`; mock mode skips login.
+- [ ] 7.3 Garmin: `garmin.Source` + `LocalSpawn` (decrypt the bundle into a `0700` temp
+      dir, spawn with `GARMINTOKENS`, delete on close); `internal/crypto` AES-256-GCM
+      under `RUNCOACH_TOKEN_KEY` with `key_version`; `POST /garmin/tokens` probes the
+      pasted bundle with `get_user_profile` before storing; `DELETE /garmin/tokens`;
+      status connected / expired / unavailable with a `fix` sentence on `/me` (ADR 0003).
+- [ ] 7.4 Chats: `GET/POST /chats`, `PATCH/DELETE /chats/:id`, `GET /chats/:id/messages`,
+      `POST /chats/:id/stream` with history loaded server-side; 429 at the daily cap; 409
+      while a reply is running; usage from the API's token counts; mock mode uses an
+      in-memory store.
+- [ ] 7.5 Screens: `/login` with a "waking up" state while `/healthz` is unreachable;
+      `/connection` with the chip state, the laptop commands and the paste box.
+- [ ] 7.6 Shell: `vue-router` (`/login`, `/`, `/c/:id`, `/connection`); sidebar by day
+      with new and delete, the Garmin chip and the usage line; drawer below the `wide:`
+      breakpoint; thread, steps, composer reused.
+- [ ] 7.7 One origin: the Go binary serves `frontend/dist` through `embed.FS`, API under
+      `/api/`, CORS only when `ALLOWED_ORIGIN` is set; SSE `: keepalive` every 15 s;
+      `/healthz` reports db and Garmin state with no secrets (ADR 0007).
+- [ ] Checkpoint: tests and CI green; login, paste (against the local Docker image), two
+      chats and a follow-up work locally with Postgres; mock mode still needs none.
+      PR to `main`.
 
-## Task list (index; details in the phase files)
+## Phase 8: Deploy (free) and test
 
-### Phase 5: Garmin live, Strava out
-- [ ] 5.1 Remove Strava from the backend
-- [ ] 5.2 Remove Strava from the frontend and the docs
-- [ ] 5.3 Database optional
-- [ ] 5.4 Garmin client: pin bump, read-surface filter in Go
-- [ ] 5.5 Live tool-diff test
-- [ ] 5.6 Garmin-only prompt, Opus 5.5, effort, caching
-- [ ] 5.7 Live pass: five questions, measured
-- [ ] 5.8 Rough edges from the live pass
+- [ ] 8.1 Image: root `Dockerfile` (node build → go build with the dist embedded →
+      `python:3.12-slim` with `garmin-mcp` at the pin, non-root); `render.yaml` for one
+      free web service with health check `/healthz`; migrations run on start under an
+      advisory lock; `.dockerignore`.
+- [ ] 8.2 Hosting (Leo): Neon free project; Render free web service from the repo; env
+      vars set in the dashboard (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`,
+      `ANTHROPIC_EFFORT`, `RUNCOACH_TOKEN_KEY`, `RUNCOACH_OWNER_PASSWORD_HASH`); deploy on
+      push to `main`.
+- [ ] 8.3 Garmin (Leo): `docker compose build` and `garmin-mcp-auth` once on the laptop;
+      paste `~/.garminconnect_base64` on `/connection`; opt-in live tool-diff test
+      (`RUNCOACH_LIVE_GARMIN_TESTS=1`) proves the read surface and records the token file
+      names and spawn time in `docs/live/phase-8.md`.
+- [ ] 8.4 Live pass: the five questions from the phone, each at `medium` and `high`
+      effort and once on Sonnet 5.5; tools chosen, grounded or not, chart or not, wall
+      time, tokens with and without cache, cost; 60 s idle stream survives Render; recorded
+      in `docs/live/phase-8.md` with screenshots.
+- [ ] 8.5 Rough edges: prompt first, code second; re-run the affected questions; README
+      "status" and "deploy" sections; token refresh instructions.
+- [ ] 8.6 Playwright smoke on mock mode in CI: a chart question, a non-chart question,
+      login redirect, sidebar new/delete; under three minutes.
+- [ ] Done: Leo asks a question from his phone and gets a grounded reply with a chart;
+      removing the token row shows the fix text, never a pretend answer.
 
-### Checkpoint: Phase 5 merged
-- [ ] `go test -count=1 ./...` and `npm test` green; CI green
-- [ ] `grep -ri strava` matches only `docs/adr/`, `PROGRESS.md` history and the spec's revision note
-- [ ] `docs/live/phase-5.md` records the five questions, tools chosen, grounding, tokens and cost
+## Risks
 
-### Phase 6: charts
-- [ ] 6.1 `show_chart` spec and validator
-- [ ] 6.2 Virtual `coach` source in the agent loop
-- [ ] 6.3 SSE `chart` event and two mock scenarios
-- [ ] 6.4 Prompt rules for charts and the live chart-rate test
-- [ ] 6.5 `lib/chart.js` layout engine
-- [ ] 6.6 `ChartCard.vue` with data table
-- [ ] 6.7 Playwright smoke on mock mode in CI
-- [ ] 6.8 Live pass with charts
-
-### Checkpoint: Phase 6 merged
-- [ ] Each of the five questions that should chart does, with a valid card; the others do not
-- [ ] An invalid chart drops and the prose still renders (mock scenario proves it)
-
-### Phase 7a: MVP shell and hosting
-- [ ] 7a.1 Fresh migrations with `runner_id` everywhere and the scoped query helper
-- [ ] 7a.2 `auth.Provider`, `OwnerPassword`, sessions, `/login` `/logout` `/me`
-- [ ] 7a.3 `garmin.Source`, `LocalSpawn`, token crypto, `POST /garmin/tokens`
-- [ ] 7a.4 Chat persistence, cap and in-flight guard
-- [ ] 7a.5 Login and Connection screens
-- [ ] 7a.6 Router, sidebar, chip, phone drawer
-- [ ] 7a.7 One image: embedded UI, SSE keepalive, `/healthz`
-- [ ] 7a.8 Render + Neon, first question from the phone
-
-### Checkpoint: MVP
-- [ ] Leo asks a question from his phone and gets a grounded reply with a chart
-- [ ] Expired-token and Garmin-unavailable states show the fix text, never a pretend answer
-
-### Phase 7b: polish after use
-- [ ] 7b.1 Streaming deltas and Stop
-- [ ] 7b.2 Dark theme
-- [ ] 7b.3 Suggestions on an empty chat
-- [ ] 7b.4 Chat search and rename
-- [ ] 7b.5 Haiku 5.5 chat titles
-- [ ] 7b.6 Playwright: login, sidebar, chart, in CI
-
-### Roadmap: other runners (not scheduled, ≈ 7 d)
-- R1 `GatewayOAuth` provider and `GatewayHTTP` source against the MissingMCP gateway; runner upsert by Garmin profile id (M)
-- R2 `BYOURL` source: probe, store, tool-map adaptation (S)
-- R3 Fork MissingMCP onto an Oracle Always Free VM with a keepalive (M)
-- R4 Tenancy tests with two runners; delete account; privacy page stating the unofficial access; global unavailable notice (M)
-- R5 Apply to Garmin's Connect Developer Program if it reopens (S)
-
-## Risks and mitigations
-
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Garmin changes a private endpoint and upstream lags | High: replies fail | Pin a commit, bump deliberately; the coach says "Garmin unavailable" (R19); probe state on the chip and `/healthz` |
-| The model picks wrong tools among ~90 or answers ungrounded | High: the product is wrong | Category map in the prompt; the Phase 5 live pass records every tool choice; the rough-edges task fixes the prompt before anything else is built |
-| Cost per question higher than estimated | Medium | Measured in 5.7 with and without cache before the cap is set; effort dial; Sonnet 5.5 is a one-line fallback |
-| Render's proxy drops long SSE streams | Medium: replies cut off | Keepalive comment every 15 s (7a.7); acceptance test holds an idle stream 60 s through Render |
-| Token bundle format differs from what the plan assumes | Low | 5.5 records the exact file names the installed version writes; 7a.3 materialises those, not a guess |
-| Garmin blocks token-based calls from a cloud IP | Medium | Nothing found says data calls are throttled, only sign-ins; the first hosted week shows it; fallback is the Oracle VM |
-| Render free service wake time feels broken | Low | Login page shows a waking state (7a.5); accepted in ADR 0007 |
-
-## Open questions (the gate)
-
-None block Phase 5. Two are recorded as decided-by-default and Leo can overturn them at
-the gate:
-
-1. ADR 0003's paste box replaces the spec rev 4 `cmd/import-tokens` command. Default: paste.
-2. Playwright on mock mode moves from 7b to the end of Phase 6 so the Verifier has browser
-   legs for the first UI-visible milestone. Default: Phase 6.
+| Risk | Where it is caught |
+|---|---|
+| Garmin changes a private endpoint and upstream lags | pinned commit; "Garmin unavailable" state; probe on the chip and `/healthz` |
+| The model picks wrong tools among ~90 or answers ungrounded | category map; 8.4 records every choice; 8.5 fixes the prompt |
+| Cost per question above the estimate | 8.4 measures with and without cache; effort dial; Sonnet 5.5 one line away |
+| Render's proxy drops long SSE streams | keepalive in 7.7; proven in 8.4 |
+| Token bundle file names differ from the assumption | 8.3 records them before 7.3's spawn is trusted live; the probe fails loudly otherwise |

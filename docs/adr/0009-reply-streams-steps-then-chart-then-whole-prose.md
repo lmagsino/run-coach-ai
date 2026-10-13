@@ -6,7 +6,7 @@ date: 2026-10-13
 
 The streaming contract for the MVP is the Phase 4 one plus one event: `step` events as
 tools run, at most one `chart` event, then a single `answer` event with the whole prose.
-Token-by-token `delta` events and a Stop button are Phase 7b, after the MVP has been used.
+Token-by-token `delta` events and a Stop button come later, after the MVP has been used.
 
 The prose cannot usefully stream before the tools finish, because the coach has nothing
 grounded to say until then, and a reply with several Garmin calls spends most of its 15 to
