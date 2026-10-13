@@ -89,9 +89,10 @@ backend/
   `POST /api/chat` is the stateless curl path.
 - **Token paste:** `POST /api/garmin/tokens {bundle}` normalises the base64 line
   `garmin-mcp-auth` writes, probes it with `get_user_profile` through a real spawn, seals it
-  (AES-256-GCM, `RUNCOACH_TOKEN_KEY`) and upserts `garmin_connections`. `LocalSpawn` hands the
-  decrypted bundle to the child as `GARMINTOKENS`: python-garminconnect treats a store longer
-  than 512 characters as the token data itself, so no file is ever written.
+  (AES-256-GCM, `RUNCOACH_TOKEN_KEY`) and upserts `garmin_connections`. `LocalSpawn` decodes the
+  bundle and hands the JSON to the child as `GARMINTOKENS`: python-garminconnect treats a store
+  longer than 512 characters as inline token data and parses it with `json.loads`, so it must be
+  the JSON, never the base64, and no file is ever written.
 - **One origin** (ADR 0007): `internal/web` embeds `frontend/dist` (placeholder committed;
   the Dockerfile copies the real build). Vite proxies `/api` in dev. CORS is off unless
   `ALLOWED_ORIGIN` is set.

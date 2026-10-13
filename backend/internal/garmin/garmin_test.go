@@ -2,6 +2,7 @@ package garmin
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -21,6 +22,42 @@ func TestNormalizeBundle(t *testing.T) {
 		if _, err := NormalizeBundle(s); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+}
+
+// What reaches the child is the JSON garmin-mcp-auth encoded, never the
+// base64: python-garminconnect parses an inline store with json.loads.
+func TestTokenStoreIsDecodedJSON(t *testing.T) {
+	tokens := `{"di_token":"` + strings.Repeat("t", 700) + `","di_refresh_token":"r","di_client_id":"c"}`
+	bundle := base64.StdEncoding.EncodeToString([]byte(" " + tokens + "\n"))
+	got, err := TokenStore(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != tokens {
+		t.Errorf("token store is not the compact JSON:\n%s", got[:80])
+	}
+	if strings.Contains(got, "\n") {
+		t.Error("compact store carries a newline")
+	}
+
+	// A bundle whose JSON is short would be read as a path; it is indented
+	// past the inline threshold and stays valid JSON.
+	short := base64.StdEncoding.EncodeToString([]byte(`{"di_token":"abc","di_refresh_token":"r","di_client_id":"c"}`))
+	got, err = TokenStore(short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) <= 512 {
+		t.Errorf("short store not padded past 512: %d", len(got))
+	}
+	var v map[string]any
+	if err := json.Unmarshal([]byte(got), &v); err != nil || v["di_token"] != "abc" {
+		t.Errorf("padded store is not the same JSON: %v", err)
+	}
+
+	if _, err := TokenStore("not base64!"); err == nil {
+		t.Error("garbage accepted")
 	}
 }
 

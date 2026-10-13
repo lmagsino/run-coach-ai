@@ -6,6 +6,7 @@
 package garmin
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -45,12 +46,13 @@ const ProbeTool = "get_user_profile"
 
 // LocalSpawn runs garmin-mcp as a subprocess for each reply.
 //
-// The decrypted bundle is handed to the child as GARMINTOKENS. Upstream reads
-// that variable as a token store path, but python-garminconnect treats any
-// store longer than 512 characters as the token data itself (it is the
-// base64 that garmin-mcp-auth wrote to ~/.garminconnect_base64), so no file is
-// ever written. Without a stored bundle the command runs as configured, which
-// is the local-dev case of a named Docker volume holding the tokens.
+// The decrypted bundle is decoded and handed to the child as GARMINTOKENS.
+// Upstream reads that variable as a token store path, but python-garminconnect
+// 0.3.2 treats any store longer than 512 characters as the token data itself
+// and parses it with json.loads, so the child gets the JSON that
+// garmin-mcp-auth base64-encoded, never the base64, and no file is written.
+// Without a stored bundle the command runs as configured, which is the
+// local-dev case of a named Docker volume holding the tokens.
 type LocalSpawn struct {
 	Command string // program and args, whitespace separated
 	Store   store.Store
@@ -81,7 +83,11 @@ func (l *LocalSpawn) Connect(ctx context.Context, runnerID int64) (*mcp.ClientSe
 		if err != nil {
 			return nil, nil, err
 		}
-		env = []string{"GARMINTOKENS=" + string(bundle)}
+		tokens, err := TokenStore(string(bundle))
+		if err != nil {
+			return nil, nil, err
+		}
+		env = []string{"GARMINTOKENS=" + tokens}
 	}
 	session, err := l.client(env...).Connect(ctx)
 	if err != nil {
@@ -95,7 +101,11 @@ func (l *LocalSpawn) Probe(ctx context.Context, bundle string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	session, err := l.client("GARMINTOKENS=" + bundle).Connect(ctx)
+	tokens, err := TokenStore(bundle)
+	if err != nil {
+		return "", err
+	}
+	session, err := l.client("GARMINTOKENS=" + tokens).Connect(ctx)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
@@ -156,6 +166,29 @@ func NormalizeBundle(s string) (string, error) {
 		return "", errors.New("garmin: the bundle does not decode to JSON")
 	}
 	return s, nil
+}
+
+// TokenStore turns a normalised bundle into the value GARMINTOKENS carries: the
+// decoded JSON on one line. python-garminconnect only treats the value as inline
+// token data when it is longer than 512 characters (shorter means a path), so
+// a short JSON is indented until it is; indentation is still valid JSON.
+func TokenStore(bundle string) (string, error) {
+	raw, err := base64.StdEncoding.DecodeString(bundle)
+	if err != nil {
+		return "", errors.New("garmin: the bundle is not valid base64")
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		return "", errors.New("garmin: the bundle does not decode to JSON")
+	}
+	out := compact.String()
+	if len(out) <= 512 {
+		var padded bytes.Buffer
+		if err := json.Indent(&padded, raw, "", strings.Repeat(" ", 64)); err == nil && padded.Len() > 512 {
+			out = padded.String()
+		}
+	}
+	return out, nil
 }
 
 // displayName pulls a name out of the profile payload if there is one; the
