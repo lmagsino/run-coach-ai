@@ -17,6 +17,9 @@ import (
 type Garmin struct {
 	command string
 	args    []string
+	// ExtraEnv is appended to the allowlisted environment: the one place a
+	// token bundle enters (GARMINTOKENS=<bundle>, see internal/garmin).
+	ExtraEnv []string
 }
 
 // NewGarmin builds a client that runs `command args...` to start the MCP server.
@@ -29,7 +32,8 @@ func NewGarmin(command string, args ...string) *Garmin {
 // Connect spawns the garmin-mcp subprocess and returns an initialized MCP
 // session. The caller must Close the session.
 func (g *Garmin) Connect(ctx context.Context) (*mcp.ClientSession, error) {
-	return connect(ctx, SourceGarmin, g.command, g.args, childEnv(os.Environ()))
+	env := append(childEnv(os.Environ()), g.ExtraEnv...)
+	return connect(ctx, SourceGarmin, g.command, g.args, env)
 }
 
 // passthroughEnv is the only part of the parent environment a spawned server
