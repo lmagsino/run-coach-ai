@@ -26,7 +26,7 @@ func mockServer(t *testing.T) *Server {
 			MockMode:      true,
 			AllowedOrigin: "http://localhost:5173",
 		},
-		sources: []string{"strava", "garmin"},
+		sources: []string{"garmin"},
 	}
 }
 
@@ -131,39 +131,29 @@ func TestChatStreamEmitsStepsThenAnswer(t *testing.T) {
 	}
 }
 
-// The sleep-vs-pace question is the product's premise (spec §3), so its canned
-// scenario must genuinely reach both sources — a mock that quietly answered from
-// one would hide the cross-source UI we are building.
-func TestChatStreamSleepQuestionUsesBothSources(t *testing.T) {
-	events := postStream(t, mockServer(t), "Does my sleep actually affect my pace?")
-
-	seen := map[string]bool{}
-	for _, ev := range events {
-		if ev.Name == "step" {
-			seen[ev.Data["source"].(string)] = true
+// Every step names Garmin, the only source, and the answer reports it: the
+// status steps and the "sources" field describe the same work.
+func TestChatStreamStepsAreGarminOnly(t *testing.T) {
+	for _, q := range []string{
+		"Does my sleep actually affect my pace?",
+		"How did my last three training blocks compare?",
+	} {
+		events := postStream(t, mockServer(t), q)
+		steps := 0
+		for _, ev := range events {
+			if ev.Name == "step" {
+				steps++
+				if ev.Data["source"] != "garmin" {
+					t.Errorf("%q: unexpected %v step", q, ev.Data["source"])
+				}
+			}
 		}
-	}
-	for _, want := range []string{"strava", "garmin"} {
-		if !seen[want] {
-			t.Errorf("no %s step in the stream; got %v", want, seen)
+		if steps == 0 {
+			t.Errorf("%q: no steps streamed", q)
 		}
-	}
-
-	answer := events[len(events)-1].Data
-	sources, _ := answer["sources"].([]any)
-	if len(sources) != 2 {
-		t.Errorf("answer sources: got %v, want both", sources)
-	}
-}
-
-// A single-source question must not drag the other source in, or the status
-// steps would misreport what was consulted.
-func TestChatStreamTrainingBlockQuestionIsStravaOnly(t *testing.T) {
-	events := postStream(t, mockServer(t), "How did my last 3 marathon training blocks compare?")
-
-	for _, ev := range events {
-		if ev.Name == "step" && ev.Data["source"] != "strava" {
-			t.Errorf("unexpected %v step for a training-log question", ev.Data["source"])
+		sources, _ := events[len(events)-1].Data["sources"].([]any)
+		if len(sources) != 1 || sources[0] != "garmin" {
+			t.Errorf("%q: answer sources: got %v, want [garmin]", q, sources)
 		}
 	}
 }
@@ -181,7 +171,7 @@ func TestChatStreamUnknownQuestionAdmitsItIsMocked(t *testing.T) {
 }
 
 // Mock mode must not require the credentials the real path does — that is what
-// makes it usable in Phases 2-4.
+// makes it usable before any account exists.
 func TestChatMockModeNeedsNoCredentials(t *testing.T) {
 	s := mockServer(t)
 	req := httptest.NewRequest(http.MethodPost, "/chat",
@@ -221,7 +211,7 @@ func TestChatRejectsEmptyQuestion(t *testing.T) {
 // the registered sources rather than a hardcoded pair.
 func TestSourcesReportsRegisteredSourcesAndMockFlag(t *testing.T) {
 	s := mockServer(t)
-	s.sources = []string{"strava"} // Garmin not configured
+	s.sources = nil // GARMIN_MCP_COMMAND unset
 
 	req := httptest.NewRequest(http.MethodGet, "/sources", nil)
 	rec := httptest.NewRecorder()
@@ -231,8 +221,8 @@ func TestSourcesReportsRegisteredSourcesAndMockFlag(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(got.Sources) != 1 || got.Sources[0] != "strava" {
-		t.Errorf("sources: got %v, want [strava]", got.Sources)
+	if len(got.Sources) != 0 {
+		t.Errorf("sources: got %v, want none", got.Sources)
 	}
 	if !got.Mock {
 		t.Error("mock flag should be true")
@@ -273,7 +263,7 @@ func TestCORSAllowsTheConfiguredOriginOnly(t *testing.T) {
 // The client holds the thread, so history has to survive the HTTP boundary
 // intact for follow-ups to work at all. Mock mode ignores it when answering, so
 // this asserts the decode rather than the behaviour — the model's use of it is
-// covered in internal/agent and, live, in Phase 5.
+// covered in internal/agent and, live, in the live pass.
 func TestRequestHistoryDecodesInOrder(t *testing.T) {
 	body := `{"question":"and the week before?","history":[
 		{"question":"q1","answer":"a1"},
@@ -316,8 +306,9 @@ func TestRequestWithoutHistoryIsValid(t *testing.T) {
 	}
 }
 
-// Mock mode runs with no database, so /healthz must answer instead of panicking
-// on a nil pool — and must not claim the database is "up" when there isn't one.
+// Mock mode and a server without DATABASE_URL have no database, so /healthz
+// must answer instead of panicking on a nil pool — and must not claim the
+// database is "up" when there isn't one.
 func TestHealthzWithoutADatabase(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -336,7 +327,7 @@ func TestHealthzWithoutADatabase(t *testing.T) {
 	if got["db"] == "up" {
 		t.Error(`db reported "up" with no database connected`)
 	}
-	if !strings.Contains(got["db"], "skipped") {
-		t.Errorf("db: got %q, want it to say skipped", got["db"])
+	if got["db"] != "off" {
+		t.Errorf("db: got %q, want off", got["db"])
 	}
 }

@@ -10,15 +10,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lmagsino/run-coach-ai/backend/internal/config"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
-	"github.com/lmagsino/run-coach-ai/backend/internal/strava"
 )
 
 // Server holds shared dependencies for HTTP handlers.
 type Server struct {
 	cfg       *config.Config
-	pool      *pgxpool.Pool
-	strava    *strava.Client
-	stravaMCP *mcpclient.Strava
+	pool      *pgxpool.Pool     // nil in mock mode or when DATABASE_URL is unset
 	garminMCP *mcpclient.Garmin // nil when GARMIN_MCP_COMMAND is unset
 	anthropic anthropic.Client
 	// sources names the registered tool sources, in the order the agent exposes
@@ -26,39 +23,29 @@ type Server struct {
 	sources []string
 }
 
-// New builds a Server from configuration and a database pool.
+// New builds a Server from configuration and an optional database pool.
 func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
-	store := strava.NewTokenStore(pool)
-	stravaCmd, stravaArgs := splitCommand(cfg.StravaMCPCommand)
 	s := &Server{
 		cfg:       cfg,
 		pool:      pool,
-		strava:    strava.NewClient(cfg.StravaClientID, cfg.StravaClientSecret, cfg.StravaRedirectURI, store),
-		stravaMCP: mcpclient.NewStrava(stravaCmd, stravaArgs...),
 		anthropic: anthropic.NewClient(), // reads ANTHROPIC_API_KEY from env
 	}
 
-	// Garmin is optional: until the container is built and authenticated
-	// (Phase 5), leaving GARMIN_MCP_COMMAND unset keeps Strava as the only
-	// tool source rather than failing every request on a missing image.
-	sources := []string{mcpclient.SourceStrava}
+	// Garmin is the only source. Until the local image is built and
+	// authenticated, leaving GARMIN_MCP_COMMAND unset keeps the server starting
+	// (for mock mode and /healthz) while every live request says what is missing.
 	if cfg.GarminMCPCommand != "" {
 		garminCmd, garminArgs := splitCommand(cfg.GarminMCPCommand)
 		s.garminMCP = mcpclient.NewGarmin(garminCmd, garminArgs...)
-		sources = append(sources, mcpclient.SourceGarmin)
+		s.sources = []string{mcpclient.SourceGarmin}
 	}
-	s.sources = sources
-	log.Printf("agent tool sources: %s", strings.Join(sources, ", "))
+	log.Printf("agent tool sources: %s", strings.Join(s.sources, ", "))
 	if cfg.MockMode {
-		// Mock scenarios narrate Garmin steps whether or not the container is
-		// configured — that is the point, since exercising the two-source UI is
-		// what mock mode is for. Reporting the real (Strava-only) set here would
-		// leave the header contradicting the status steps beneath it. Honest
-		// because the same response carries mock:true, which the UI displays.
-		s.sources = []string{mcpclient.SourceStrava, mcpclient.SourceGarmin}
-		log.Printf("mock mode reports sources: %s", strings.Join(s.sources, ", "))
+		// Mock scenarios narrate Garmin steps whether or not the command is
+		// configured; the same response carries mock:true, which the UI shows.
+		s.sources = []string{mcpclient.SourceGarmin}
 		log.Printf("RUNCOACH_MOCK is set: /chat and /chat/stream serve canned answers; " +
-			"no Strava, Garmin or Claude call is made")
+			"no Garmin or Claude call is made")
 	}
 
 	return s
@@ -78,8 +65,6 @@ func splitCommand(cmd string) (string, []string) {
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("GET /auth/strava/login", s.handleStravaLogin)
-	mux.HandleFunc("GET /auth/strava/callback", s.handleStravaCallback)
 	mux.HandleFunc("GET /sources", s.handleSources)
 	mux.HandleFunc("POST /chat", s.handleChat)
 	mux.HandleFunc("POST /chat/stream", s.handleChatStream)

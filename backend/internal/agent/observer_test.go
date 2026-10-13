@@ -11,20 +11,20 @@ import (
 // this the status steps could claim a source was consulted when it wasn't —
 // exactly the dishonesty the visible-reasoning feature exists to avoid.
 func TestObserverReportsEveryToolCallInOrder(t *testing.T) {
-	strava, garmin, _, _ := stubbedSources(t)
+	gateway, garmin, _, _ := stubbedSources(t)
 
 	client, _ := startFakeModel(t,
 		// Two tools in one turn, then a third on a later turn: covers both the
 		// parallel and sequential shapes the prompt allows.
 		fakeTurn{ToolUses: []fakeToolUse{
 			{Name: "garmin__get_sleep_data"},
-			{Name: "strava__get_activities"},
+			{Name: "gateway__get_activities"},
 		}},
 		fakeTurn{ToolUses: []fakeToolUse{{Name: "garmin__get_activities"}}},
 		fakeTurn{Text: "final answer"},
 	)
 
-	ag := New(client, "test-model", strava, garmin)
+	ag := New(client, "test-model", gateway, garmin)
 
 	var got []string
 	ag.Observe(func(ev Event) {
@@ -39,8 +39,8 @@ func TestObserverReportsEveryToolCallInOrder(t *testing.T) {
 	want := []string{
 		"tool_start garmin/get_sleep_data failed=false",
 		"tool_end garmin/get_sleep_data failed=false",
-		"tool_start strava/get_activities failed=false",
-		"tool_end strava/get_activities failed=false",
+		"tool_start gateway/get_activities failed=false",
+		"tool_end gateway/get_activities failed=false",
 		"tool_start garmin/get_activities failed=false",
 		"tool_end garmin/get_activities failed=false",
 	}
@@ -48,7 +48,7 @@ func TestObserverReportsEveryToolCallInOrder(t *testing.T) {
 
 	// The event trail and the reported sources describe the same work, so they
 	// must not be able to disagree.
-	assertEqualStrings(t, "sources", result.Sources(), []string{"garmin", "strava"})
+	assertEqualStrings(t, "sources", result.Sources(), []string{"garmin", "gateway"})
 }
 
 // A failing tool must still close its step, marked failed. If the end event were
@@ -85,12 +85,12 @@ func TestObserverMarksFailedToolCalls(t *testing.T) {
 // An agent with no observer must behave exactly as before — the whole existing
 // /chat path relies on it.
 func TestAnswerWorksWithoutObserver(t *testing.T) {
-	strava, garmin, _, _ := stubbedSources(t)
+	gateway, garmin, _, _ := stubbedSources(t)
 	client, _ := startFakeModel(t,
-		fakeTurn{ToolUses: []fakeToolUse{{Name: "strava__get_activities"}}},
+		fakeTurn{ToolUses: []fakeToolUse{{Name: "gateway__get_activities"}}},
 		fakeTurn{Text: "final answer"},
 	)
-	ag := New(client, "test-model", strava, garmin)
+	ag := New(client, "test-model", gateway, garmin)
 
 	result, err := ag.Answer(context.Background(), "how far did I run?")
 	if err != nil {

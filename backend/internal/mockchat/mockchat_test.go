@@ -1,59 +1,78 @@
 package mockchat
 
 import (
+	"bufio"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 )
 
-// stravaTools are the tools cmd/strava-mcp actually exposes. Kept as a literal
-// because that server registers them inline rather than from a list.
-var stravaTools = map[string]bool{"list_activities": true}
-
-// Every tool a scenario names must be one the real servers expose. A mock that
-// invents tool names still "works" — but the UI's step labels are keyed on those
-// names, so Phase 5 would silently fall back to generic copy for every step, and
-// the mock would stop being a rehearsal for anything.
-func TestScenarioToolsExistOnTheRealServers(t *testing.T) {
-	garminTools := map[string]bool{}
-	for _, name := range mcpclient.DefaultGarminTools {
-		garminTools[name] = true
+// upstreamTools reads deploy/garmin-mcp/tools.txt, the tool names the pinned
+// upstream server exposes. Every tool a scenario names must be in it: a mock
+// that invents tool names still "works", but the UI's step labels are keyed on
+// those names, so a live reply would silently fall back to generic copy and the
+// mock would stop being a rehearsal for anything.
+func upstreamTools(t *testing.T) map[string]bool {
+	t.Helper()
+	_, thisFile, _, _ := runtime.Caller(0)
+	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "..", "deploy", "garmin-mcp", "tools.txt")
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open upstream tool list: %v", err)
 	}
+	defer f.Close()
+
+	tools := map[string]bool{}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		tools[line] = true
+	}
+	if len(tools) < 100 {
+		t.Fatalf("upstream tool list looks truncated: %d names", len(tools))
+	}
+	return tools
+}
+
+func TestScenarioToolsExistUpstream(t *testing.T) {
+	garminTools := upstreamTools(t)
 
 	all := append([]Scenario{}, scenarios...)
 	all = append(all, fallback)
 
 	for _, s := range all {
 		for _, step := range s.Steps {
-			switch step.Source {
-			case mcpclient.SourceStrava:
-				if !stravaTools[step.Tool] {
-					t.Errorf("scenario %q calls strava tool %q, which strava-mcp does not expose",
-						s.Match, step.Tool)
-				}
-			case mcpclient.SourceGarmin:
-				if !garminTools[step.Tool] {
-					t.Errorf("scenario %q calls garmin tool %q, which is not in DefaultGarminTools",
-						s.Match, step.Tool)
-				}
-			default:
+			if step.Source != mcpclient.SourceGarmin {
 				t.Errorf("scenario %q uses unknown source %q", s.Match, step.Source)
+				continue
+			}
+			if !garminTools[step.Tool] {
+				t.Errorf("scenario %q calls garmin tool %q, which upstream does not expose",
+					s.Match, step.Tool)
+			}
+			if !mcpclient.ReadOnly(step.Tool) {
+				t.Errorf("scenario %q calls %q, which the read surface denies", s.Match, step.Tool)
 			}
 		}
 	}
 }
 
-// Each of the five spec §4 questions must resolve to a real scenario, not the
-// fallback — those five are what the Phase 4 walkthrough and the Phase 5 live
-// test both use.
+// Each of the five example questions must resolve to a real scenario, not the
+// fallback — those five are what the mock walkthrough and the live pass use.
 func TestSpecQuestionsAllMatchAScenario(t *testing.T) {
 	questions := []string{
 		"Does my sleep actually affect my pace? Show me the pattern.",
 		"Am I overtraining right now?",
-		"How did my last 3 marathon training blocks compare?",
-		"I have a half marathon in 10 weeks — am I on track, factoring in how recovered I've been?",
-		"My watch and Strava show different HR for yesterday's run — which is right?",
+		"How did my last three training blocks compare?",
+		"I have a half marathon in 10 weeks. Am I on track, given how recovered I've been?",
+		"Why has my body battery been so low this week?",
 	}
 	for _, q := range questions {
 		got := Match(q)
@@ -80,11 +99,11 @@ func TestFallbackAdmitsItIsMocked(t *testing.T) {
 func TestSourcesDedupesInCallOrder(t *testing.T) {
 	s := Scenario{Steps: []Step{
 		{Source: "garmin", Tool: "get_sleep_data"},
-		{Source: "strava", Tool: "list_activities"},
+		{Source: "gateway", Tool: "get_activities"},
 		{Source: "garmin", Tool: "get_hrv_trend"},
 	}}
 	got := s.Sources()
-	want := []string{"garmin", "strava"}
+	want := []string{"garmin", "gateway"}
 	if len(got) != len(want) {
 		t.Fatalf("sources: got %v, want %v", got, want)
 	}

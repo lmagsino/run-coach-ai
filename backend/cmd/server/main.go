@@ -23,13 +23,16 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	// Mock mode answers without touching Postgres — no token lookup, no history
-	// persistence — so requiring a running database would make frontend work
-	// depend on infrastructure it never uses.
+	// Nothing is stored until chats are persisted (ADR 0008), so the database
+	// is optional: mock mode never touches it, and a live server without
+	// DATABASE_URL simply runs without one and says so on /healthz.
 	var pool *pgxpool.Pool
-	if cfg.MockMode {
+	switch {
+	case cfg.MockMode:
 		log.Println("mock mode: skipping the database connection")
-	} else {
+	case cfg.DatabaseURL == "":
+		log.Println("DATABASE_URL is not set: running without a database")
+	default:
 		ctx := context.Background()
 		p, err := db.NewPool(ctx, cfg.DatabaseURL)
 		if err != nil {

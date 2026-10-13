@@ -11,7 +11,6 @@ import (
 	"github.com/lmagsino/run-coach-ai/backend/internal/agent"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mockchat"
-	"github.com/lmagsino/run-coach-ai/backend/internal/strava"
 )
 
 type chatRequest struct {
@@ -70,49 +69,28 @@ func readRequest(w http.ResponseWriter, r *http.Request) (chatRequest, bool) {
 	return req, true
 }
 
-// prepareAgent connects every configured MCP source and returns a ready Agent
-// plus a cleanup func. On failure it returns an HTTP status and message for the
-// caller to render — as JSON for /chat, as an SSE error event for /chat/stream.
+// prepareAgent spawns the Garmin MCP server and returns a ready Agent plus a
+// cleanup func. On failure it returns an HTTP status and message for the caller
+// to render — as JSON for /chat, as an SSE error event for /chat/stream.
 func (s *Server) prepareAgent(ctx context.Context) (*agent.Agent, func(), int, error) {
 	if s.cfg.AnthropicAPIKey == "" {
 		return nil, nil, http.StatusServiceUnavailable, errors.New("ANTHROPIC_API_KEY is not set")
 	}
-
-	tok, err := s.strava.ValidToken(ctx)
-	if errors.Is(err, strava.ErrNoToken) {
-		return nil, nil, http.StatusPreconditionRequired,
-			errors.New("no Strava connection yet — authorize first at /auth/strava/login")
+	if s.garminMCP == nil {
+		return nil, nil, http.StatusServiceUnavailable,
+			errors.New("GARMIN_MCP_COMMAND is not set — Garmin is the only data source")
 	}
+
+	// A configured-but-broken server is a real error, not something to quietly
+	// answer around: without its data the coach has nothing grounded to say.
+	session, err := s.garminMCP.Connect(ctx)
 	if err != nil {
 		return nil, nil, http.StatusBadGateway, err
 	}
+	cleanup := func() { session.Close() }
+	source := agent.Source{Name: mcpclient.SourceGarmin, Session: session}
 
-	stravaSession, err := s.stravaMCP.Connect(ctx, tok.AccessToken)
-	if err != nil {
-		return nil, nil, http.StatusBadGateway, err
-	}
-	closers := []func(){func() { stravaSession.Close() }}
-	cleanup := func() {
-		for _, c := range closers {
-			c()
-		}
-	}
-	sources := []agent.Source{{Name: mcpclient.SourceStrava, Session: stravaSession}}
-
-	// Garmin joins the tool set only when configured. A configured-but-broken
-	// container is a real error, not something to quietly answer around:
-	// dropping it would leave the agent silently unable to see recovery data.
-	if s.garminMCP != nil {
-		garminSession, err := s.garminMCP.Connect(ctx)
-		if err != nil {
-			cleanup()
-			return nil, nil, http.StatusBadGateway, err
-		}
-		closers = append(closers, func() { garminSession.Close() })
-		sources = append(sources, agent.Source{Name: mcpclient.SourceGarmin, Session: garminSession})
-	}
-
-	return agent.New(s.anthropic, anthropic.Model(s.cfg.AnthropicModel), sources...), cleanup, 0, nil
+	return agent.New(s.anthropic, anthropic.Model(s.cfg.AnthropicModel), source), cleanup, 0, nil
 }
 
 // handleChat answers a training question in a single round-trip. Kept alongside
@@ -151,8 +129,8 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleChatStream answers the same question over SSE, emitting a step event as
-// each tool call starts and finishes so the UI can show which sources are being
-// consulted while it happens (spec §5, DESIGN.md §5).
+// each tool call starts and finishes so the UI can show what is being read
+// while it happens (spec §5, DESIGN.md §5).
 //
 // It is a POST rather than the GET that EventSource wants, so the question stays
 // in the body: putting user text in a query string would leak it into access logs
@@ -211,7 +189,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 }
 
 // streamMock replays a canned scenario with the event sequence and rough timing
-// a real answer produces, so the UI is exercised the way Phase 5 will drive it.
+// a real answer produces, so the UI is exercised the way a live reply drives it.
 func streamMock(ctx context.Context, sse *sseWriter, question string) {
 	scenario := mockchat.Match(question)
 

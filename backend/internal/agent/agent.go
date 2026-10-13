@@ -1,7 +1,10 @@
-// Package agent runs a Claude tool-calling loop whose tools are backed by one or
-// more MCP sessions — Strava, Garmin, or both. Claude decides which tools to
-// call; the agent routes each call to the session that owns it and feeds results
-// back until Claude answers.
+// Package agent runs a Claude tool-calling loop whose tools are backed by MCP
+// sessions. Claude decides which tools to call; the agent routes each call to
+// the session that owns it and feeds results back until Claude answers.
+//
+// There is one source today, Garmin. The loop stays written for N sources
+// because the roadmap adds the same Garmin data through a gateway or a
+// runner-supplied URL as further sources (ADR 0002).
 package agent
 
 import (
@@ -16,11 +19,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const basePrompt = `You are RunCoach, a running coach assistant. Answer the user's ` +
-	`questions about their training using ONLY the data returned by the tools. ` +
-	`Ground every claim in what the tools return — cite specific numbers (distances, ` +
-	`paces, dates). If the tools return no data, say so plainly; never invent activities ` +
-	`or fall back on generic training advice.`
+const basePrompt = `You are RunCoach, a running coach who reads the runner's own Garmin data. ` +
+	`Answer questions about their training and recovery using ONLY the data returned by the tools. ` +
+	`Ground every claim in what the tools return — cite specific numbers and dates (distances, ` +
+	`paces, hours of sleep, HRV, load). If the tools return no data for a range, say so plainly; ` +
+	`never invent sessions or fall back on generic training advice. If a tool fails, say what ` +
+	`you could not read rather than guessing around it.`
 
 // answerFormat teaches the one piece of structure the UI needs that prose cannot
 // express: which single number deserves the pull-quote treatment (DESIGN.md §5).
@@ -29,44 +33,54 @@ const basePrompt = `You are RunCoach, a running coach assistant. Answer the user
 const answerFormat = `Formatting your answer:
 - Open with a single short sentence that answers the question directly, then a blank line, then the supporting detail in short paragraphs separated by blank lines.
 - If ONE number is the heart of the answer, put it on its own line as: [figure: VALUE | short caption]
-  e.g. [figure: 6:44 | avg long-run pace per mile — eight seconds ahead of the pace a 2:30 needs]
+  e.g. [figure: 4:44 | avg long-run pace per km — eight seconds ahead of the pace a 1:40 needs]
 - At most one such line per answer, and only when a single figure genuinely carries it. Most answers have none. Never use it for a list of numbers, and never emit more than one.
 - No markdown, headings, bullet lists or tables. Plain prose only.`
 
-// sourceGuidance tells Claude what each source can and cannot answer, so tool
-// selection is the model's decision rather than something hardcoded per question
-// type (spec §5). Only registered sources are described — promising Garmin data
-// when the container is not configured would invite calls that cannot succeed.
+// sourceGuidance tells Claude what a source can answer. Only registered sources
+// are described, so the prompt never promises data the agent cannot fetch.
 var sourceGuidance = map[string]string{
-	mcpclient.SourceStrava: "the training log: activities with distance, moving time, " +
-		"pace, elevation and the heart rate recorded for each one. It knows nothing " +
-		"about the athlete's recovery or physiology between sessions.",
-	mcpclient.SourceGarmin: "the watch's view of the athlete: the same activities, plus " +
-		"sleep duration and stages, HRV, stress, training load, VO2 max trend, body " +
-		"composition and daily steps. This is the only source for recovery and " +
-		"physiology data.",
+	mcpclient.SourceGarmin: "the watch's view of the runner: every activity with distance, " +
+		"pace, heart rate and splits, plus sleep, HRV, stress, body battery, training load " +
+		"and status, readiness, VO2 max, race predictions, steps and body composition.",
 }
 
-// selectionRules is appended only when more than one source is registered.
-const selectionRules = `Choosing which sources to call:
-- Call only what the question needs. Pace, distance, elevation or route questions need Strava alone; sleep, HRV, stress, recovery or training-load questions need Garmin alone.
-- Call both when the question links training to the body — "does my sleep affect my pace", "am I overtraining", "am I on track given how recovered I've been". Answering those from one source is a guess; if a source you need is unavailable, say what is missing instead of guessing.
-- You may request several tools in one turn. Do not wait for one result before asking for another unless the second call depends on the first.
-- Both sources can list activities. Treat Strava as the training log. If the two disagree about the same session, report the discrepancy and say which number came from which source rather than silently picking one.`
+// garminCategoryMap is the twelve-line index into roughly ninety Garmin tools.
+// It encodes upstream's own range advice (one summary call over weeks, not one
+// call per night) so the model reaches for the cheap, findable tool first.
+// Every tool named here must exist upstream; a test checks the list against
+// deploy/garmin-mcp/tools.txt.
+const garminCategoryMap = `Finding the right Garmin tool (prefix garmin__):
+- Activities over a range: get_activities_by_date (start, end); recent list: get_activities; one session's detail and splits: get_activity, get_activity_splits.
+- Sleep over weeks: get_sleep_summary_range; one night in detail: get_sleep_data.
+- HRV: get_hrv_trend for weeks, get_hrv_data for one day.
+- Stress and body battery: get_stress_summary, get_all_day_stress, get_body_battery.
+- Training load, status and recovery: get_training_load_trend, get_training_status, get_training_readiness, get_recovery_time_remaining.
+- Fitness markers: get_vo2max_trend, get_race_predictions, get_lactate_threshold, get_endurance_score, get_hill_score, get_heart_rate_zones.
+- Daily health: get_heart_rates_summary, get_respiration_summary, get_spo2_data, get_daily_steps, get_weekly_intensity_minutes.
+- Body: get_body_composition, get_stats_and_body, get_fitnessage_data.
+- Profile and devices: get_user_profile, get_primary_training_device.
+- Lap-level detail from the FIT file: get_activity_fit_data, get_activity_fit_messages. Large; use only when the question is about intervals inside one session.
+- Prefer one range tool over many single-day calls. Pass return_timeseries=false unless the question needs intra-day detail.
+- Make at most eight tool calls per answer; ask for several in one turn when they do not depend on each other.`
 
+// maxTurns bounds the tool loop; the prompt also tells the model the budget.
 const maxTurns = 8
 
 // toolNameSep separates a source name from the tool name in the namespaced tool
-// names given to Claude, e.g. "garmin__get_sleep_data". Both servers expose an
-// activities listing, so unprefixed names would collide; the separator also
-// tells the model which source it is reaching for.
+// names given to Claude, e.g. "garmin__get_sleep_data". A second source could
+// expose the same tool names, so the prefix is what routes a call.
 const toolNameSep = "__"
 
 // Source is one MCP-backed tool source available to the agent. Name must be a
-// short identifier safe for a tool name (see mcpclient.SourceStrava/SourceGarmin).
+// short identifier safe for a tool name (see mcpclient.SourceGarmin).
 type Source struct {
 	Name    string
 	Session *mcp.ClientSession
+	// Allow, when set, decides which of the session's tools are offered to the
+	// model. Garmin uses mcpclient.ReadOnly so write tools are never offered;
+	// a hallucinated call to one hits the unknown-tool error like any other.
+	Allow func(tool string) bool
 }
 
 // ToolCall records one tool invocation the agent made on Claude's behalf.
@@ -102,8 +116,7 @@ type Observer func(Event)
 
 // Observe registers an Observer so callers can report progress while an answer
 // is still being assembled. Without one, Answer's tool-call trail is only
-// readable after it returns, which is too late to narrate (spec §5 asks for
-// visible reasoning *while* tools run).
+// readable after it returns, which is too late to narrate.
 func (a *Agent) Observe(fn Observer) { a.observer = fn }
 
 func (a *Agent) emit(ev Event) {
@@ -112,10 +125,20 @@ func (a *Agent) emit(ev Event) {
 	}
 }
 
+// Usage is the token accounting summed over every model call in one answer.
+// Cached input is reported separately because it is what prompt caching on the
+// system prompt and tool block saves (ADR 0006).
+type Usage struct {
+	InputTokens       int64
+	CachedInputTokens int64
+	OutputTokens      int64
+}
+
 // Result is a finished answer plus the trail of tool calls that produced it.
 type Result struct {
 	Answer    string
 	ToolCalls []ToolCall
+	Usage     Usage
 }
 
 // Sources returns the distinct source names the answer drew on, in call order.
@@ -135,14 +158,24 @@ func (r *Result) Sources() []string {
 type Agent struct {
 	anthropic anthropic.Client
 	model     anthropic.Model
+	effort    anthropic.OutputConfigEffort
 	sources   []Source
 	observer  Observer
 }
 
 // New builds an Agent over already-connected MCP sessions. Order is preserved
-// in the tool list handed to Claude.
+// in the tool list handed to Claude. Effort defaults to medium.
 func New(client anthropic.Client, model anthropic.Model, sources ...Source) *Agent {
-	return &Agent{anthropic: client, model: model, sources: sources}
+	return &Agent{anthropic: client, model: model, effort: anthropic.OutputConfigEffortMedium, sources: sources}
+}
+
+// WithEffort sets the effort level sent with every request. Thinking cannot be
+// switched off on Opus 5.5, so this is the one dial on reasoning cost.
+func (a *Agent) WithEffort(effort string) *Agent {
+	if effort != "" {
+		a.effort = anthropic.OutputConfigEffort(effort)
+	}
+	return a
 }
 
 // toolRef points a namespaced tool name back at the session that owns it.
@@ -153,8 +186,7 @@ type toolRef struct {
 }
 
 // PriorTurn is one completed exchange earlier in the same conversation, used to
-// resolve follow-up questions like "what about the week before that?" (spec §5,
-// multi-turn memory).
+// resolve follow-up questions like "what about the week before that?".
 type PriorTurn struct {
 	Question string
 	Answer   string
@@ -183,7 +215,16 @@ func (a *Agent) AnswerInConversation(ctx context.Context, prior []PriorTurn, que
 		return nil, err
 	}
 
-	system := a.systemPrompt()
+	// The system prompt and the tool block are identical for every request, so
+	// they are marked as one cache prefix: the breakpoint on the last tool
+	// covers everything before it. Only the messages differ per request.
+	system := []anthropic.TextBlockParam{{
+		Text:         a.systemPrompt(),
+		CacheControl: anthropic.NewCacheControlEphemeralParam(),
+	}}
+	if len(tools) > 0 {
+		tools[len(tools)-1].OfTool.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	}
 
 	if len(prior) > maxPriorTurns {
 		prior = prior[len(prior)-maxPriorTurns:]
@@ -206,15 +247,19 @@ func (a *Agent) AnswerInConversation(ctx context.Context, prior []PriorTurn, que
 
 	for turn := 0; turn < maxTurns; turn++ {
 		resp, err := a.anthropic.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:     a.model,
-			MaxTokens: 1024,
-			System:    []anthropic.TextBlockParam{{Text: system}},
-			Messages:  messages,
-			Tools:     tools,
+			Model:        a.model,
+			MaxTokens:    2048,
+			System:       system,
+			Messages:     messages,
+			Tools:        tools,
+			OutputConfig: anthropic.OutputConfigParam{Effort: a.effort},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("claude message: %w", err)
 		}
+		result.Usage.InputTokens += resp.Usage.InputTokens
+		result.Usage.CachedInputTokens += resp.Usage.CacheReadInputTokens
+		result.Usage.OutputTokens += resp.Usage.OutputTokens
 		messages = append(messages, resp.ToParam())
 
 		if resp.StopReason != anthropic.StopReasonToolUse {
@@ -250,26 +295,30 @@ func (a *Agent) AnswerInConversation(ctx context.Context, prior []PriorTurn, que
 }
 
 // systemPrompt assembles the instructions for this agent's actual source set:
-// the grounding rules, what each registered source is good for, the
-// multi-source selection rules (only when there is a choice to make), and the
-// current date so relative ranges like "last week" can be resolved.
+// the grounding rules, what each registered source is good for, the Garmin
+// category map when Garmin is registered, the answer format, and the current
+// date so relative ranges like "last week" can be resolved.
 func (a *Agent) systemPrompt() string {
 	var b strings.Builder
 	b.WriteString(basePrompt)
 
 	b.WriteString("\n\nAvailable data sources, one tool set each. Tool names are\n")
-	b.WriteString("prefixed with the source they belong to (e.g. strava" + toolNameSep + "get_activities):\n")
+	b.WriteString("prefixed with the source they belong to (e.g. garmin" + toolNameSep + "get_sleep_data):\n")
+	hasGarmin := false
 	for _, src := range a.sources {
 		guidance, ok := sourceGuidance[src.Name]
 		if !ok {
 			guidance = "an additional data source; rely on its tool descriptions."
 		}
 		fmt.Fprintf(&b, "- %s — %s\n", src.Name, guidance)
+		if src.Name == mcpclient.SourceGarmin {
+			hasGarmin = true
+		}
 	}
 
-	if len(a.sources) > 1 {
+	if hasGarmin {
 		b.WriteString("\n")
-		b.WriteString(selectionRules)
+		b.WriteString(garminCategoryMap)
 	}
 
 	b.WriteString("\n\n")
@@ -284,6 +333,8 @@ func (a *Agent) systemPrompt() string {
 
 // buildTools converts every source's MCP tools into Anthropic tool definitions
 // with source-namespaced names, plus the routing table to undo the namespacing.
+// A source's Allow filter is applied here, so a denied tool is never offered
+// and never routable.
 func (a *Agent) buildTools(ctx context.Context) ([]anthropic.ToolUnionParam, map[string]toolRef, error) {
 	var tools []anthropic.ToolUnionParam
 	router := map[string]toolRef{}
@@ -294,6 +345,9 @@ func (a *Agent) buildTools(ctx context.Context) ([]anthropic.ToolUnionParam, map
 			return nil, nil, fmt.Errorf("list %s mcp tools: %w", src.Name, err)
 		}
 		for _, t := range list.Tools {
+			if src.Allow != nil && !src.Allow(t.Name) {
+				continue
+			}
 			name := src.Name + toolNameSep + t.Name
 			router[name] = toolRef{source: src.Name, tool: t.Name, session: src.Session}
 			tools = append(tools, anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{

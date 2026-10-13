@@ -12,13 +12,13 @@ import (
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 )
 
-// Cross-source scenarios: the value proposition from spec §3 is answering
-// questions that need Strava and Garmin together. These tests use fabricated
-// datasets — no live account, no real numbers — with a signal deliberately
-// planted across the two sources so that an answer drawing on only one of them
-// is provably incomplete.
+// Grounding scenarios: the product's premise is answering questions that need
+// several Garmin tools together, with every number in the reply traceable to a
+// tool result. These tests use fabricated datasets — no live account, no real
+// numbers — with a signal planted across two tools so that an answer drawing on
+// only one of them is provably incomplete.
 
-// sleepNight is a night in the fake Garmin dataset.
+// sleepNight is a night in the fake sleep dataset.
 type sleepNight struct {
 	Date      string  `json:"date"`
 	Hours     float64 `json:"sleep_hours"`
@@ -26,7 +26,7 @@ type sleepNight struct {
 	RestingHR int     `json:"resting_hr"`
 }
 
-// longRun is a run in the fake Strava dataset.
+// longRun is a run in the fake activities dataset.
 type longRun struct {
 	Date       string  `json:"date"`
 	DistanceKM float64 `json:"distance_km"`
@@ -36,8 +36,8 @@ type longRun struct {
 
 // The planted pattern: the four nights under 6.2 hours (with HRV in the 40s)
 // each precede a long run roughly 25 s/km slower than the well-slept weeks, at
-// the same distance. Neither source shows this alone — Strava has the paces but
-// no sleep, Garmin has the sleep but not the pace the agent should cite.
+// the same distance. Neither tool shows this alone — activities have the paces
+// but no sleep, sleep has the nights but not the pace the agent should cite.
 var (
 	fakeSleepNights = []sleepNight{
 		{Date: "2026-06-05", Hours: 7.8, HRV: 62, RestingHR: 44},
@@ -62,138 +62,126 @@ var (
 	}
 )
 
-// crossSourceStubs wires a Strava stub holding the fake runs and a Garmin stub
-// holding the fake nights, returning both sources plus the exact payload text
-// each tool serves (so tests can assert that text reached the model).
-func crossSourceStubs(t *testing.T) (strava, garmin Source, runsPayload, sleepPayload string) {
+// garminStub wires one Garmin stub holding the fake runs and the fake nights,
+// returning the source plus the exact payload text each tool serves (so tests
+// can assert that text reached the model).
+func garminStub(t *testing.T) (garmin Source, runsPayload, sleepPayload string) {
 	t.Helper()
 
-	runs := jsonTool(t, "get_activities",
-		"List the athlete's Strava activities with distance, pace and average heart rate.",
+	runs := jsonTool(t, "get_activities_by_date",
+		"List activities in a date range with distance, pace and average heart rate.",
 		map[string]any{"activities": fakeLongRuns})
-	sleep := jsonTool(t, "get_sleep_data",
-		"Nightly sleep duration, HRV and resting heart rate from the watch.",
+	sleep := jsonTool(t, "get_sleep_summary_range",
+		"Nightly sleep duration, HRV and resting heart rate over a date range.",
 		map[string]any{"nights": fakeSleepNights})
 
-	stravaSession, _ := startStub(t, "strava-mcp", runs)
-	garminSession, _ := startStub(t, "garmin-mcp", sleep)
-
-	return Source{Name: mcpclient.SourceStrava, Session: stravaSession},
-		Source{Name: mcpclient.SourceGarmin, Session: garminSession},
+	session, _ := startStub(t, "garmin-mcp", runs, sleep)
+	return Source{Name: mcpclient.SourceGarmin, Session: session, Allow: mcpclient.ReadOnly},
 		runs.result, sleep.result
 }
 
-// "Does my sleep actually affect my pace?" — the headline cross-source question.
-// Both datasets must land in the same model context, otherwise the agent is
+// "Does my sleep actually affect my pace?" — the headline question. Both
+// datasets must land in the same model context, otherwise the agent is
 // correlating against data it cannot see.
-func TestCrossSourceSleepVersusPace(t *testing.T) {
-	strava, garmin, runsPayload, sleepPayload := crossSourceStubs(t)
+func TestSleepVersusPaceCombinesBothTools(t *testing.T) {
+	garmin, runsPayload, sleepPayload := garminStub(t)
 
 	client, model := startFakeModel(t,
 		fakeTurn{ToolUses: []fakeToolUse{
-			{Name: "garmin__get_sleep_data", Input: map[string]any{"days": 60}},
-			{Name: "strava__get_activities", Input: map[string]any{"per_page": 30}},
+			{Name: "garmin__get_sleep_summary_range", Input: map[string]any{"start": "2026-06-01", "end": "2026-07-31"}},
+			{Name: "garmin__get_activities_by_date", Input: map[string]any{"start": "2026-06-01", "end": "2026-07-31"}},
 		}},
 		fakeTurn{Text: "Your four nights under 6.2h preceded long runs around 5:00/km, " +
 			"about 25s/km slower than the 4:35/km weeks after 8h sleep."},
 	)
-	ag := New(client, "test-model", strava, garmin)
+	ag := New(client, "test-model", garmin)
 
 	result, err := ag.Answer(context.Background(), "Does my sleep actually affect my pace? Show me the pattern.")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
-
-	assertEqualStrings(t, "sources", result.Sources(), []string{"garmin", "strava"})
+	assertEqualStrings(t, "sources", result.Sources(), []string{"garmin"})
+	if len(result.ToolCalls) != 2 {
+		t.Fatalf("tool calls: got %+v, want 2", result.ToolCalls)
+	}
 
 	// Both tool results must be present verbatim in the request that produced
 	// the answer — the actual definition of "combined in one context".
 	final := model.LastRequest(t)
-	assertBodyContains(t, final.Body, "Garmin sleep dataset", sleepPayload)
-	assertBodyContains(t, final.Body, "Strava run dataset", runsPayload)
+	assertBodyContains(t, final.Body, "sleep dataset", sleepPayload)
+	assertBodyContains(t, final.Body, "run dataset", runsPayload)
 
-	// And the model was offered both tool sets to choose from in the first place.
+	// And the model was offered both tools in the first place.
 	first := model.Requests()[0]
 	assertEqualStrings(t, "tools offered", first.Tools,
-		[]string{"strava__get_activities", "garmin__get_sleep_data"})
+		[]string{"garmin__get_activities_by_date", "garmin__get_sleep_summary_range"})
 }
 
-// "Am I overtraining?" — training load and recovery live in Garmin, the volume
-// ramp that caused them lives in Strava. Here the agent reaches for the second
-// source only after seeing the first, so the sequential path must combine too.
-func TestCrossSourceOvertrainingSequential(t *testing.T) {
+// "Am I overtraining?" — the agent reaches for the second tool only after
+// seeing the first, so the sequential path must combine too.
+func TestOvertrainingSequential(t *testing.T) {
 	loadPayload := `{"acute_load":412,"chronic_load":268,"acute_chronic_ratio":1.54,"status":"overreaching"}`
-	garminSession, _ := startStub(t, "garmin-mcp",
-		jsonTool(t, "get_sleep_data", "Nightly sleep.", map[string]any{"nights": fakeSleepNights}),
-		stubTool{name: "get_training_load_trend", description: "Acute vs chronic training load.",
-			result: loadPayload},
+	runs := jsonTool(t, "get_activities_by_date", "List activities.", map[string]any{"activities": fakeLongRuns})
+	session, _ := startStub(t, "garmin-mcp",
+		runs,
+		stubTool{name: "get_training_load_trend", description: "Acute vs chronic training load.", result: loadPayload},
 	)
-	stravaTool := jsonTool(t, "get_activities", "List Strava activities.",
-		map[string]any{"activities": fakeLongRuns})
-	stravaSession, _ := startStub(t, "strava-mcp", stravaTool)
 
 	client, model := startFakeModel(t,
 		fakeTurn{ToolUses: []fakeToolUse{{Name: "garmin__get_training_load_trend"}}},
-		fakeTurn{ToolUses: []fakeToolUse{{Name: "strava__get_activities", Input: map[string]any{"per_page": 30}}}},
+		fakeTurn{ToolUses: []fakeToolUse{{Name: "garmin__get_activities_by_date", Input: map[string]any{"start": "2026-06-01", "end": "2026-07-31"}}}},
 		fakeTurn{Text: "Acute:chronic load is 1.54 (overreaching) and your last two long runs " +
 			"slowed to 5:06/km and 5:01/km at a higher average HR."},
 	)
-	ag := New(client, "test-model",
-		Source{Name: mcpclient.SourceStrava, Session: stravaSession},
-		Source{Name: mcpclient.SourceGarmin, Session: garminSession},
-	)
+	ag := New(client, "test-model", Source{Name: mcpclient.SourceGarmin, Session: session})
 
 	result, err := ag.Answer(context.Background(), "Am I overtraining right now?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
-
-	assertEqualStrings(t, "sources", result.Sources(), []string{"garmin", "strava"})
 	if len(result.ToolCalls) != 2 {
 		t.Fatalf("tool calls: got %+v, want 2", result.ToolCalls)
 	}
-
 	final := model.LastRequest(t)
-	assertBodyContains(t, final.Body, "Garmin training load", loadPayload)
-	assertBodyContains(t, final.Body, "Strava run dataset", stravaTool.result)
+	assertBodyContains(t, final.Body, "training load", loadPayload)
+	assertBodyContains(t, final.Body, "run dataset", runs.result)
 }
 
-// A single-source question must not drag in the other source: pulling Garmin
-// data for a plain distance question wastes tokens and, worse, would make
-// Result.Sources() claim the answer rests on recovery data it never used.
-func TestSingleSourceQuestionStaysOnOneSource(t *testing.T) {
-	strava, garmin, runsPayload, sleepPayload := crossSourceStubs(t)
+// A question about distance alone must not drag in sleep data: it wastes tokens
+// and the reply would rest on data it never needed.
+func TestSingleToolQuestionStaysOnOneTool(t *testing.T) {
+	garmin, runsPayload, sleepPayload := garminStub(t)
 
 	client, model := startFakeModel(t,
-		fakeTurn{ToolUses: []fakeToolUse{{Name: "strava__get_activities", Input: map[string]any{"per_page": 30}}}},
+		fakeTurn{ToolUses: []fakeToolUse{{Name: "garmin__get_activities_by_date", Input: map[string]any{"start": "2026-06-01", "end": "2026-07-31"}}}},
 		fakeTurn{Text: "You ran 16 km each week for the last 8 weeks."},
 	)
-	ag := New(client, "test-model", strava, garmin)
+	ag := New(client, "test-model", garmin)
 
 	result, err := ag.Answer(context.Background(), "how far were my long runs?")
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
-
-	assertEqualStrings(t, "sources", result.Sources(), []string{"strava"})
-
+	if len(result.ToolCalls) != 1 || result.ToolCalls[0].Tool != "get_activities_by_date" {
+		t.Fatalf("tool calls: got %+v, want one get_activities_by_date", result.ToolCalls)
+	}
 	final := model.LastRequest(t)
-	assertBodyContains(t, final.Body, "Strava run dataset", runsPayload)
+	assertBodyContains(t, final.Body, "run dataset", runsPayload)
 	if bodyContains(final.Body, sleepPayload) {
-		t.Error("Garmin sleep data reached the model for a Strava-only question")
+		t.Error("sleep data reached the model for a distance-only question")
 	}
 }
 
-// TestCrossSourceReasoningWithLiveModel is the one test that asks the real model
-// to *choose* its sources; everything above verifies our execution of a plan the
-// test scripted. The tool data is still fabricated, so no Garmin or Strava
-// account is involved — only the Anthropic API.
+// TestGroundingWithLiveModel is the one test that asks the real model to
+// *choose* its tools; everything above verifies our execution of a plan the
+// test scripted. The tool data is still fabricated, so no Garmin account is
+// involved — only the Anthropic API.
 //
 // Skipped unless explicitly enabled, so the default `go test ./...` makes no
 // network call and costs nothing:
 //
 //	RUNCOACH_LIVE_MODEL_TESTS=1 ANTHROPIC_API_KEY=sk-ant-... go test ./internal/agent/ -run LiveModel -v
-func TestCrossSourceReasoningWithLiveModel(t *testing.T) {
+func TestGroundingWithLiveModel(t *testing.T) {
 	if os.Getenv("RUNCOACH_LIVE_MODEL_TESTS") != "1" {
 		t.Skip("set RUNCOACH_LIVE_MODEL_TESTS=1 to run against the real Claude API")
 	}
@@ -201,9 +189,9 @@ func TestCrossSourceReasoningWithLiveModel(t *testing.T) {
 		t.Skip("ANTHROPIC_API_KEY is not set")
 	}
 
-	strava, garmin, _, _ := crossSourceStubs(t)
-	model := anthropic.Model(getenvOr("ANTHROPIC_MODEL", "claude-sonnet-5"))
-	ag := New(anthropic.NewClient(), model, strava, garmin)
+	garmin, _, _ := garminStub(t)
+	model := anthropic.Model(getenvOr("ANTHROPIC_MODEL", "claude-opus-5-5"))
+	ag := New(anthropic.NewClient(), model, garmin).WithEffort(os.Getenv("ANTHROPIC_EFFORT"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -212,23 +200,27 @@ func TestCrossSourceReasoningWithLiveModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
-	t.Logf("tool calls: %+v\nanswer:\n%s", result.ToolCalls, result.Answer)
+	t.Logf("tool calls: %+v\nusage: %+v\nanswer:\n%s", result.ToolCalls, result.Usage, result.Answer)
 
-	// The question cannot be answered from one source, so the model should have
+	// The question cannot be answered from one tool, so the model should have
 	// reached for both without being told to.
-	for _, want := range []string{mcpclient.SourceStrava, mcpclient.SourceGarmin} {
-		if !containsString(result.Sources(), want) {
-			t.Errorf("expected the model to consult %s; sources were %v", want, result.Sources())
+	called := map[string]bool{}
+	for _, c := range result.ToolCalls {
+		called[c.Tool] = true
+	}
+	for _, want := range []string{"get_activities_by_date", "get_sleep_summary_range"} {
+		if !called[want] {
+			t.Errorf("expected the model to call %s; calls were %+v", want, result.ToolCalls)
 		}
 	}
 
 	// And the answer should cite figures from both datasets rather than
 	// describing the correlation in the abstract.
 	if !citesAny(result.Answer, "5:06", "5:02", "5:01", "4:35", "4:33", "4:38") {
-		t.Errorf("answer cites no pace from the Strava dataset:\n%s", result.Answer)
+		t.Errorf("answer cites no pace from the run dataset:\n%s", result.Answer)
 	}
 	if !citesAny(result.Answer, "5.7", "5.9", "6.0", "6.1", "7.8", "8.1", "8.2") {
-		t.Errorf("answer cites no sleep duration from the Garmin dataset:\n%s", result.Answer)
+		t.Errorf("answer cites no sleep duration from the sleep dataset:\n%s", result.Answer)
 	}
 }
 
@@ -253,15 +245,6 @@ func bodyContains(body, payload string) bool {
 func citesAny(answer string, figures ...string) bool {
 	for _, f := range figures {
 		if strings.Contains(answer, f) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsString(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
 			return true
 		}
 	}

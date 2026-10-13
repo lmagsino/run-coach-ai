@@ -11,10 +11,10 @@ import (
 // exchanges reaching the model on the next request — verified here by inspecting
 // what was actually sent.
 func TestPriorTurnsReachTheModel(t *testing.T) {
-	strava, garmin, _, _ := stubbedSources(t)
+	gateway, garmin, _, _ := stubbedSources(t)
 
 	client, model := startFakeModel(t, fakeTurn{Text: "the week before that you ran 42km."})
-	ag := New(client, "test-model", strava, garmin)
+	ag := New(client, "test-model", gateway, garmin)
 
 	prior := []PriorTurn{
 		{Question: "how far did I run last week?", Answer: "You ran 48km last week."},
@@ -38,9 +38,9 @@ func TestPriorTurnsReachTheModel(t *testing.T) {
 // Order matters: a conversation replayed out of sequence would have the model
 // resolving "that" against the wrong exchange.
 func TestPriorTurnsArriveInOrder(t *testing.T) {
-	strava, _, _, _ := stubbedSources(t)
+	gateway, _, _, _ := stubbedSources(t)
 	client, model := startFakeModel(t, fakeTurn{Text: "final answer"})
-	ag := New(client, "test-model", strava)
+	ag := New(client, "test-model", gateway)
 
 	prior := []PriorTurn{
 		{Question: "FIRST_QUESTION", Answer: "FIRST_ANSWER"},
@@ -69,9 +69,9 @@ func TestPriorTurnsArriveInOrder(t *testing.T) {
 // Every turn is re-sent on every request, so an uncapped conversation would grow
 // the prompt without bound.
 func TestPriorTurnsAreCapped(t *testing.T) {
-	strava, _, _, _ := stubbedSources(t)
+	gateway, _, _, _ := stubbedSources(t)
 	client, model := startFakeModel(t, fakeTurn{Text: "final answer"})
-	ag := New(client, "test-model", strava)
+	ag := New(client, "test-model", gateway)
 
 	var prior []PriorTurn
 	for i := 0; i < maxPriorTurns+4; i++ {
@@ -99,9 +99,9 @@ func TestPriorTurnsAreCapped(t *testing.T) {
 // not be replayed as a bare question — the model would answer that instead of the
 // one just asked.
 func TestIncompletePriorTurnsAreSkipped(t *testing.T) {
-	strava, _, _, _ := stubbedSources(t)
+	gateway, _, _, _ := stubbedSources(t)
 	client, model := startFakeModel(t, fakeTurn{Text: "final answer"})
-	ag := New(client, "test-model", strava)
+	ag := New(client, "test-model", gateway)
 
 	prior := []PriorTurn{
 		{Question: "ABANDONED_QUESTION", Answer: ""},
@@ -123,9 +123,9 @@ func TestIncompletePriorTurnsAreSkipped(t *testing.T) {
 // Answer must stay equivalent to a no-history conversation, since /chat and the
 // existing tests rely on it.
 func TestAnswerIsAConversationWithNoHistory(t *testing.T) {
-	strava, _, _, _ := stubbedSources(t)
+	gateway, _, _, _ := stubbedSources(t)
 	client, _ := startFakeModel(t, fakeTurn{Text: "final answer"})
-	ag := New(client, "test-model", strava)
+	ag := New(client, "test-model", gateway)
 
 	result, err := ag.Answer(context.Background(), "how far did I run?")
 	if err != nil {

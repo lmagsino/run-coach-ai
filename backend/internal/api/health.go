@@ -8,11 +8,11 @@ import (
 
 // handleHealthz reports service health, including database connectivity.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	// Mock mode runs without a database at all, so there is nothing to ping. Say
-	// "skipped" rather than "up": claiming a healthy database that isn't there
-	// would make this endpoint useless for spotting a genuinely missing one.
+	// Mock mode and a server without DATABASE_URL have no database at all, so
+	// there is nothing to ping. Say "off" rather than "up": claiming a healthy
+	// database that isn't there would hide a genuinely missing one.
 	if s.pool == nil {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "db": "skipped (mock mode)"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "db": "off"})
 		return
 	}
 

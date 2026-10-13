@@ -2,29 +2,30 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 )
 
-// twoSourceAgent wires an Agent to a Strava stub and a Garmin stub. Both expose
-// a get_activities tool, which is the real collision: Strava lists rides/runs
-// and Garmin lists the same sessions from the watch.
+// twoSourceAgent wires an Agent to a gateway stub and a Garmin stub. Both expose
+// a get_activities tool, which is the real collision: a second source serving
+// the same Garmin data would list the same sessions under the same names.
 func twoSourceAgent(t *testing.T) (*Agent, *callLog, *callLog) {
 	t.Helper()
-	stravaSession, stravaLog := startStub(t, "strava-mcp",
-		stubTool{name: "get_activities", description: "List Strava activities.", result: `{"activities":[]}`},
+	gatewaySession, gatewayLog := startStub(t, "gateway-mcp",
+		stubTool{name: "get_activities", description: "List Gateway activities.", result: `{"activities":[]}`},
 	)
 	garminSession, garminLog := startStub(t, "garmin-mcp",
 		stubTool{name: "get_activities", description: "List Garmin activities.", result: `{"activities":[]}`},
 		stubTool{name: "get_sleep_data", description: "Nightly sleep.", result: `{"sleep":[]}`},
 	)
 	ag := New(anthropic.Client{}, "test-model",
-		Source{Name: mcpclient.SourceStrava, Session: stravaSession},
+		Source{Name: gatewaySource, Session: gatewaySession},
 		Source{Name: mcpclient.SourceGarmin, Session: garminSession},
 	)
-	return ag, stravaLog, garminLog
+	return ag, gatewayLog, garminLog
 }
 
 func TestBuildToolsNamespacesBothSources(t *testing.T) {
@@ -35,7 +36,7 @@ func TestBuildToolsNamespacesBothSources(t *testing.T) {
 		t.Fatalf("buildTools: %v", err)
 	}
 
-	want := []string{"strava__get_activities", "garmin__get_activities", "garmin__get_sleep_data"}
+	want := []string{"gateway__get_activities", "garmin__get_activities", "garmin__get_sleep_data"}
 	if len(tools) != len(want) {
 		t.Fatalf("got %d tools, want %d: %+v", len(tools), len(want), toolNames(tools))
 	}
@@ -58,9 +59,9 @@ func TestBuildToolsNamespacesBothSources(t *testing.T) {
 }
 
 // The two get_activities tools must reach different servers — a routing bug here
-// would silently answer Strava questions with Garmin data, or vice versa.
+// would silently answer one runner's question with another source's data.
 func TestCallToolRoutesToOwningSource(t *testing.T) {
-	ag, stravaLog, garminLog := twoSourceAgent(t)
+	ag, gatewayLog, garminLog := twoSourceAgent(t)
 	ctx := context.Background()
 
 	_, router, err := ag.buildTools(ctx)
@@ -71,12 +72,12 @@ func TestCallToolRoutesToOwningSource(t *testing.T) {
 	if _, err := callTool(ctx, router["garmin__get_sleep_data"], `{"days":7}`); err != nil {
 		t.Fatalf("call garmin__get_sleep_data: %v", err)
 	}
-	if _, err := callTool(ctx, router["strava__get_activities"], ""); err != nil {
-		t.Fatalf("call strava__get_activities: %v", err)
+	if _, err := callTool(ctx, router["gateway__get_activities"], ""); err != nil {
+		t.Fatalf("call gateway__get_activities: %v", err)
 	}
 
-	if got := stravaLog.Tools(); len(got) != 1 || got[0] != "get_activities" {
-		t.Errorf("strava stub calls: got %v, want [get_activities]", got)
+	if got := gatewayLog.Tools(); len(got) != 1 || got[0] != "get_activities" {
+		t.Errorf("gateway stub calls: got %v, want [get_activities]", got)
 	}
 	garminCalls := garminLog.Calls()
 	if len(garminCalls) != 1 || garminCalls[0].Tool != "get_sleep_data" {
@@ -85,6 +86,48 @@ func TestCallToolRoutesToOwningSource(t *testing.T) {
 	// Arguments must survive the round trip unmangled.
 	if days, ok := garminCalls[0].Args["days"].(float64); !ok || days != 7 {
 		t.Errorf("garmin get_sleep_data args: got %+v, want days=7", garminCalls[0].Args)
+	}
+}
+
+// A source's Allow filter decides what the model is offered: a denied tool is
+// neither listed nor routable, so even a hallucinated call to it fails as an
+// unknown tool (ADR 0004).
+func TestBuildToolsAppliesTheSourceFilter(t *testing.T) {
+	session, log := startStub(t, "garmin-mcp",
+		stubTool{name: "get_sleep_data", description: "Nightly sleep.", result: `{}`},
+		stubTool{name: "delete_activity", description: "Delete an activity.", result: `{}`},
+		stubTool{name: "set_activity_name", description: "Rename an activity.", result: `{}`},
+	)
+	ag := New(anthropic.Client{}, "test-model",
+		Source{Name: mcpclient.SourceGarmin, Session: session, Allow: mcpclient.ReadOnly})
+
+	tools, router, err := ag.buildTools(context.Background())
+	if err != nil {
+		t.Fatalf("buildTools: %v", err)
+	}
+	if got := toolNames(tools); len(got) != 1 || got[0] != "garmin__get_sleep_data" {
+		t.Errorf("offered tools: got %v, want only garmin__get_sleep_data", got)
+	}
+	if _, ok := router["garmin__delete_activity"]; ok {
+		t.Error("a denied tool is routable")
+	}
+
+	// And the loop treats a call to the denied tool as unknown, never reaching
+	// the server.
+	client, model := startFakeModel(t,
+		fakeTurn{ToolUses: []fakeToolUse{{Name: "garmin__delete_activity"}}},
+		fakeTurn{Text: "I cannot change your data."},
+	)
+	ag = New(client, "test-model",
+		Source{Name: mcpclient.SourceGarmin, Session: session, Allow: mcpclient.ReadOnly})
+	if _, err := ag.Answer(context.Background(), "delete my last run"); err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if calls := log.Tools(); len(calls) != 0 {
+		t.Errorf("denied tool reached the server: %v", calls)
+	}
+	if body := model.Requests()[1].Body; !strings.Contains(body, "no such tool") {
+		t.Errorf("model was not told the tool does not exist:\n%s", body)
 	}
 }
 

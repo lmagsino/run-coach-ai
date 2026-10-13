@@ -25,6 +25,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	if cfg.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL is not set; the server runs without a database, but migrations need one")
+	}
 
 	switch direction {
 	case "up":

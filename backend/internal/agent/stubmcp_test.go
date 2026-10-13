@@ -12,7 +12,7 @@ import (
 
 // This file provides in-process stub MCP servers so the agent's tool plumbing
 // and cross-source behaviour can be tested without Docker, credentials, or any
-// network call. Real Strava/Garmin verification happens in Phase 5.
+// network call. Real Garmin verification happens in the live pass.
 
 // stubTool is one canned tool on a stub MCP server: every call returns the same
 // text, regardless of arguments.
@@ -22,7 +22,7 @@ type stubTool struct {
 	result      string
 	// fail makes every call to this tool return an error, standing in for a
 	// source that is registered but cannot answer (expired Garmin tokens,
-	// Strava rate limit).
+	// Garmin unavailable).
 	fail bool
 }
 

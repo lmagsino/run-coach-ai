@@ -9,7 +9,7 @@ FROM python:3.12-slim
 
 # Upstream ref to install. Override at build time to move to a newer commit:
 #   docker compose build --build-arg GARMIN_MCP_REF=<sha>
-ARG GARMIN_MCP_REF=68ca159cb40f2dbba551add8bf27515bc33bdb4b
+ARG GARMIN_MCP_REF=43b0c5b375fc1c7bd6bdbead69968dfabddec265
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

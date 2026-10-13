@@ -15,15 +15,15 @@ import (
 )
 
 // fakeModel is a scripted stand-in for the Anthropic Messages API. It lets the
-// tests drive the tool-calling loop through a chosen plan — Strava only, Garmin
-// only, or both — and then inspect what the agent actually did with it, without
+// tests drive the tool-calling loop through a chosen plan — one tool, several
+// in one turn, or sequential — and then inspect what the agent actually did, without
 // any live API call.
 //
 // What this can and cannot prove: it verifies the agent correctly *executes* a
 // multi-source plan (routing, parallel tool_use in one turn, feeding results
 // back, reporting sources). Whether the real model *chooses* the right plan for
 // a given question is the model's judgment; that is checked by the opt-in live
-// test and, for real, in Phase 5.
+// test and, for real, in the live pass.
 
 // fakeToolUse is one tool the scripted model asks for.
 type fakeToolUse struct {

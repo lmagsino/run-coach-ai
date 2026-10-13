@@ -5,8 +5,8 @@
 # fresh `docker run -i --rm ...` container per chat request and the container
 # exits when the session closes (see GARMIN_MCP_COMMAND in backend/.env.example).
 #
-# So compose covers the two one-off operations, both of which happen in Phase 5
-# when real Garmin credentials arrive:
+# So compose covers the two one-off operations, both of which happen once
+# on the laptop (Phase 8 sets GARMIN_MCP_COMMAND in backend/.env afterwards):
 #
 #   docker compose build                                     # build the image
 #   docker compose --profile auth run --rm garmin-mcp-auth   # interactive login
@@ -20,7 +20,7 @@ services:
     build:
       context: .
       args:
-        GARMIN_MCP_REF: ${GARMIN_MCP_REF:-68ca159cb40f2dbba551add8bf27515bc33bdb4b}
+        GARMIN_MCP_REF: ${GARMIN_MCP_REF:-43b0c5b375fc1c7bd6bdbead69968dfabddec265}
     image: run-coach-ai/garmin-mcp:latest
     profiles: [manual]
     env_file:
