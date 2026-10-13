@@ -82,8 +82,8 @@ async function remove() {
 docker compose --profile auth run --rm garmin-mcp-auth</pre>
         </li>
         <li>
-          Copy the one-line bundle it writes:
-          <pre class="mt-1 mb-2 overflow-x-auto rounded-lg border border-line bg-paper px-3 py-2 font-mono text-[12.5px]">cat ~/.garminconnect_base64 | pbcopy</pre>
+          Copy the one-line bundle it writes into the token volume:
+          <pre class="mt-1 mb-2 overflow-x-auto rounded-lg border border-line bg-paper px-3 py-2 font-mono text-[12.5px]">docker run --rm -v run-coach-ai-garmin-tokens:/t alpine cat /t/garmin_tokens.b64 | pbcopy</pre>
         </li>
         <li>Paste it here and save. The server checks it with one profile read before keeping it, encrypted.</li>
       </ol>

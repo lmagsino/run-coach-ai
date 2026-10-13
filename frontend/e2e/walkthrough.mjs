@@ -172,7 +172,7 @@ await shot('walkthrough-error')
 // --------------------------------------------------------- connection page
 await page.goto(new URL('/connection', APP).toString(), { waitUntil: 'networkidle' })
 const conn = await page.locator('main').innerText()
-if (!/garmin-mcp-auth/.test(conn) || !/garminconnect_base64/.test(conn)) fail('connection page does not show the laptop commands')
+if (!/garmin-mcp-auth/.test(conn) || !/garmin_tokens\.b64/.test(conn)) fail('connection page does not show the laptop commands')
 if ((await page.locator('#bundle').count()) !== 1) fail('connection page has no paste box')
 
 // ------------------------------------------------------------------ layout

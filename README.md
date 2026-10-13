@@ -152,7 +152,7 @@ echo -n 'your password' | go run ./cmd/hash-password    #   RUNCOACH_OWNER_PASSW
 go run ./cmd/server
 ```
 
-Open the UI, sign in, paste the token bundle on the Connection page ([`deploy/garmin-mcp/README.md`](deploy/garmin-mcp/README.md) says where `garmin-mcp-auth` leaves it), and ask. When the bundle expires, about six months later, the chip says so and you paste a new one.
+Open the UI, sign in, paste the token bundle on the Connection page (the page shows the one command that copies it out of the token volume), and ask. When the bundle expires, about six months later, the chip says so and you paste a new one.
 
 ### Deploy, free
 

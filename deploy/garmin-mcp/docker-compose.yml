@@ -41,6 +41,11 @@ services:
     env_file:
       - path: ../../backend/.env
         required: false
+    environment:
+      # The one-line bundle the app's Connection page takes. By default it is
+      # written to ~/.garminconnect_base64, outside the volume, and lost when
+      # this --rm container exits; inside the volume it survives.
+      GARMINTOKENS_BASE64: /root/.garminconnect/garmin_tokens.b64
     volumes:
       - garmin-tokens:/root/.garminconnect
     stdin_open: true

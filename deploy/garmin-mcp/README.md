@@ -11,22 +11,13 @@ directory is for the laptop:
 ```bash
 docker compose build                                    # the image
 docker compose --profile auth run --rm garmin-mcp-auth  # sign in once: email, password, MFA
-cat ~/.garminconnect_base64                             # ...is inside the container; see below
+docker run --rm -v run-coach-ai-garmin-tokens:/t alpine cat /t/garmin_tokens.b64 | pbcopy   # the bundle
 ```
 
 `garmin-mcp-auth` writes the token files into the named volume `run-coach-ai-garmin-tokens`
-and a one-line base64 bundle next to them. To paste that bundle into the app's Connection
-page, read it out of the volume:
-
-```bash
-docker run --rm -v run-coach-ai-garmin-tokens:/t alpine sh -c 'cat /t/../root/.garminconnect_base64 2>/dev/null || ls /t'
-```
-
-(If the auth step wrote the bundle to the container's home rather than the volume, run the
-auth container with `-v run-coach-ai-garmin-tokens:/root/.garminconnect -v $PWD:/out` and
-copy it out; Phase 8.3 records which it is.) Alternatively install upstream on the laptop
-directly (`uv tool install "garmin-mcp @ git+https://github.com/Taxuspt/garmin_mcp@<ref>"`)
-and run `garmin-mcp-auth` there, which writes `~/.garminconnect_base64` on the host.
+and, because compose points `GARMINTOKENS_BASE64` into the volume, the one-line base64 bundle
+next to them as `garmin_tokens.b64`. The third command copies it to the clipboard for the
+app's Connection page.
 
 Two ways to run locally:
 
