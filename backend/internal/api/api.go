@@ -4,71 +4,93 @@ package api
 import (
 	"log"
 	"net/http"
-	"strings"
+	"sync"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/lmagsino/run-coach-ai/backend/internal/auth"
 	"github.com/lmagsino/run-coach-ai/backend/internal/config"
-	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
+	"github.com/lmagsino/run-coach-ai/backend/internal/crypto"
+	"github.com/lmagsino/run-coach-ai/backend/internal/garmin"
+	"github.com/lmagsino/run-coach-ai/backend/internal/store"
+	"github.com/lmagsino/run-coach-ai/backend/internal/web"
 )
 
 // Server holds shared dependencies for HTTP handlers.
 type Server struct {
 	cfg       *config.Config
-	pool      *pgxpool.Pool     // nil in mock mode or when DATABASE_URL is unset
-	garminMCP *mcpclient.Garmin // nil when GARMIN_MCP_COMMAND is unset
+	pool      *pgxpool.Pool // nil in mock mode or without DATABASE_URL
+	store     store.Store
+	auth      auth.Provider
+	garmin    garmin.Source
+	sealer    *crypto.Sealer // nil without RUNCOACH_TOKEN_KEY
 	anthropic anthropic.Client
-	// sources names the registered tool sources, in the order the agent exposes
-	// them. Served to the UI so it can describe what it is actually connected to.
-	sources []string
+	// inflight holds the runner ids with a reply in progress: one at a time
+	// per runner, so a double tap cannot spawn two Garmin processes and bill
+	// two answers.
+	inflight sync.Map
+	logins   *loginLimiter
 }
 
-// New builds a Server from configuration and an optional database pool.
+// New builds a Server from configuration and an optional database pool. Without
+// a pool the store is in-memory, which is what mock mode and a database-less
+// dev server get: chats then live until the process exits.
 func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 	s := &Server{
 		cfg:       cfg,
 		pool:      pool,
 		anthropic: anthropic.NewClient(), // reads ANTHROPIC_API_KEY from env
+		auth:      auth.OwnerPassword{Hash: []byte(cfg.OwnerPasswordHash), OwnerID: 1},
+		logins:    newLoginLimiter(5, time.Minute),
 	}
+	if pool != nil {
+		s.store = store.NewPG(pool)
+	} else {
+		s.store = store.NewMemory()
+		if !cfg.MockMode {
+			log.Println("no database: chats are kept in memory until restart")
+		}
+	}
+	if cfg.TokenKey != "" {
+		sealer, err := crypto.New(cfg.TokenKey)
+		if err != nil {
+			log.Fatalf("RUNCOACH_TOKEN_KEY: %v", err)
+		}
+		s.sealer = sealer
+	}
+	s.garmin = &garmin.LocalSpawn{Command: cfg.GarminMCPCommand, Store: s.store, Sealer: s.sealer}
 
-	// Garmin is the only source. Until the local image is built and
-	// authenticated, leaving GARMIN_MCP_COMMAND unset keeps the server starting
-	// (for mock mode and /healthz) while every live request says what is missing.
-	if cfg.GarminMCPCommand != "" {
-		garminCmd, garminArgs := splitCommand(cfg.GarminMCPCommand)
-		s.garminMCP = mcpclient.NewGarmin(garminCmd, garminArgs...)
-		s.sources = []string{mcpclient.SourceGarmin}
-	}
-	log.Printf("agent tool sources: %s", strings.Join(s.sources, ", "))
 	if cfg.MockMode {
-		// Mock scenarios narrate Garmin steps whether or not the command is
-		// configured; the same response carries mock:true, which the UI shows.
-		s.sources = []string{mcpclient.SourceGarmin}
-		log.Printf("RUNCOACH_MOCK is set: /chat and /chat/stream serve canned answers; " +
-			"no Garmin or Claude call is made")
+		log.Printf("RUNCOACH_MOCK is set: canned answers, no login, no Garmin or Claude call")
+	} else if cfg.OwnerPasswordHash == "" {
+		log.Printf("RUNCOACH_OWNER_PASSWORD_HASH is not set: nobody can log in")
 	}
-
 	return s
 }
 
-// splitCommand splits a configured MCP launch command into program and args.
-// Whitespace-separated only — no shell quoting, so paths must not contain spaces.
-func splitCommand(cmd string) (string, []string) {
-	fields := strings.Fields(cmd)
-	if len(fields) == 0 {
-		return "", nil
-	}
-	return fields[0], fields[1:]
-}
-
-// Routes returns the HTTP handler with all routes registered.
+// Routes returns the HTTP handler with all routes registered. The API lives
+// under /api; everything else is the embedded UI (ADR 0007).
 func (s *Server) Routes() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("GET /sources", s.handleSources)
-	mux.HandleFunc("POST /chat", s.handleChat)
-	mux.HandleFunc("POST /chat/stream", s.handleChatStream)
-	// The frontend is served from a different origin in development (Vite on
-	// :5173), so every route needs CORS, including the OPTIONS preflight.
-	return withCORS(s.cfg.AllowedOrigin, mux)
+	api := http.NewServeMux()
+	api.HandleFunc("GET /api/healthz", s.handleHealthz)
+	api.HandleFunc("POST /api/login", s.handleLogin)
+	api.HandleFunc("POST /api/logout", s.handleLogout)
+	api.HandleFunc("GET /api/me", s.handleMe)
+	api.HandleFunc("POST /api/garmin/tokens", s.handleGarminTokens)
+	api.HandleFunc("DELETE /api/garmin/tokens", s.handleGarminTokensDelete)
+	api.HandleFunc("GET /api/chats", s.handleChatsList)
+	api.HandleFunc("POST /api/chats", s.handleChatsCreate)
+	api.HandleFunc("PATCH /api/chats/{id}", s.handleChatRename)
+	api.HandleFunc("DELETE /api/chats/{id}", s.handleChatDelete)
+	api.HandleFunc("GET /api/chats/{id}/messages", s.handleChatMessages)
+	api.HandleFunc("POST /api/chats/{id}/stream", s.handleChatStream)
+	// Stateless question for curl and the live pass: no chat, no history.
+	api.HandleFunc("POST /api/chat", s.handleChat)
+
+	root := http.NewServeMux()
+	root.Handle("/api/", s.withSession(api))
+	root.HandleFunc("GET /healthz", s.handleHealthz) // the host's health check path
+	root.Handle("/", web.Handler())
+	return withCORS(s.cfg.AllowedOrigin, root)
 }

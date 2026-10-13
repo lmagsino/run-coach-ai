@@ -18,16 +18,25 @@ type Config struct {
 	DatabaseURL string
 
 	// GarminMCPCommand launches the upstream garmin-mcp server, which the
-	// backend connects to as an MCP client over stdio for each reply. Garmin is
-	// the only data source, so a live (non-mock) request fails without it.
+	// backend connects to as an MCP client over stdio for each reply. The
+	// hosted image has the binary on PATH; local dev points it at the Docker
+	// image. The runner's token bundle is handed to it as GARMINTOKENS.
 	GarminMCPCommand string
+
+	// OwnerPasswordHash is the bcrypt hash the owner logs in with (ADR 0002).
+	// Empty means nobody can log in outside mock mode.
+	OwnerPasswordHash string
+	// TokenKey seals the stored Garmin token bundle (ADR 0003). Base64 of 32
+	// random bytes; `go run ./cmd/token-key` prints one.
+	TokenKey string
 
 	AnthropicAPIKey string
 	AnthropicModel  string // Claude model id for the agent loop
 	AnthropicEffort string // effort level sent with every request (ADR 0006)
 
-	// AllowedOrigin is the browser origin permitted by CORS — the Vite dev
-	// server in local development. Empty disables the CORS headers entirely.
+	// AllowedOrigin is a browser origin permitted by CORS. Empty, the default,
+	// disables CORS: the UI is served from the same origin in production and
+	// the Vite dev server proxies /api (ADR 0007).
 	AllowedOrigin string
 
 	// MockMode serves canned answers instead of calling Claude or Garmin, so
@@ -43,14 +52,16 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		Port:             getenv("PORT", "8080"),
-		DatabaseURL:      os.Getenv("DATABASE_URL"),
-		GarminMCPCommand: os.Getenv("GARMIN_MCP_COMMAND"),
-		AnthropicAPIKey:  os.Getenv("ANTHROPIC_API_KEY"),
-		AnthropicModel:   getenv("ANTHROPIC_MODEL", "claude-opus-5-5"),
-		AnthropicEffort:  getenv("ANTHROPIC_EFFORT", "medium"),
-		AllowedOrigin:    getenv("ALLOWED_ORIGIN", "http://localhost:5173"),
-		MockMode:         truthy(os.Getenv("RUNCOACH_MOCK")),
+		Port:              getenv("PORT", "8080"),
+		DatabaseURL:       os.Getenv("DATABASE_URL"),
+		GarminMCPCommand:  getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
+		OwnerPasswordHash: os.Getenv("RUNCOACH_OWNER_PASSWORD_HASH"),
+		TokenKey:          os.Getenv("RUNCOACH_TOKEN_KEY"),
+		AnthropicAPIKey:   os.Getenv("ANTHROPIC_API_KEY"),
+		AnthropicModel:    getenv("ANTHROPIC_MODEL", "claude-opus-5-5"),
+		AnthropicEffort:   getenv("ANTHROPIC_EFFORT", "medium"),
+		AllowedOrigin:     os.Getenv("ALLOWED_ORIGIN"),
+		MockMode:          truthy(os.Getenv("RUNCOACH_MOCK")),
 	}
 	return cfg, nil
 }

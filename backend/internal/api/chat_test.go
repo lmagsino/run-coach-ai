@@ -8,26 +8,31 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lmagsino/run-coach-ai/backend/internal/auth"
 	"github.com/lmagsino/run-coach-ai/backend/internal/config"
+	"github.com/lmagsino/run-coach-ai/backend/internal/store"
 )
 
-// These tests cover the mock-mode and transport plumbing only: no database, no
-// MCP subprocess, no Anthropic call. That is the whole point of mock mode — it
-// is the path the frontend is built against before any credential exists.
+// These tests cover mock mode and the transport plumbing: no database, no MCP
+// subprocess, no Anthropic call. Mock mode is the path the frontend is built
+// against before any credential exists, and it goes through the same routes,
+// store and stream writer as the live path.
 
-// mockServer builds a Server wired for mock mode. The nil pool and clients are
-// safe because mock mode returns before touching any of them; a test that
-// reached them would panic rather than silently pass, which is the behaviour we
-// want if that ever stops being true.
 func mockServer(t *testing.T) *Server {
 	t.Helper()
-	return &Server{
-		cfg: &config.Config{
-			MockMode:      true,
-			AllowedOrigin: "http://localhost:5173",
-		},
-		sources: []string{"garmin"},
+	return New(&config.Config{MockMode: true}, nil)
+}
+
+// liveServer is a non-mock server with an in-memory store and no Garmin or
+// model: enough to test login, sessions and the guards that fire before any
+// of those are reached.
+func liveServer(t *testing.T, password string) *Server {
+	t.Helper()
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return New(&config.Config{OwnerPasswordHash: hash}, nil)
 }
 
 // sseEvent is one parsed frame off the stream.
@@ -46,6 +51,8 @@ func readSSE(t *testing.T, body string) []sseEvent {
 	for scanner.Scan() {
 		line := scanner.Text()
 		switch {
+		case strings.HasPrefix(line, ":"):
+			// keepalive comment
 		case strings.HasPrefix(line, "event: "):
 			current.Name = strings.TrimPrefix(line, "event: ")
 		case strings.HasPrefix(line, "data: "):
@@ -63,13 +70,40 @@ func readSSE(t *testing.T, body string) []sseEvent {
 	return events
 }
 
-func postStream(t *testing.T, s *Server, question string) []sseEvent {
+func do(t *testing.T, s *Server, method, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
-	body := strings.NewReader(`{"question":` + quote(question) + `}`)
-	req := httptest.NewRequest(http.MethodPost, "/chat/stream", body)
+	var rd *strings.Reader
+	if body != "" {
+		rd = strings.NewReader(body)
+	} else {
+		rd = strings.NewReader("")
+	}
+	req := httptest.NewRequest(method, path, rd)
+	req.Header.Set("Content-Type", "application/json")
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
 	rec := httptest.NewRecorder()
 	s.Routes().ServeHTTP(rec, req)
+	return rec
+}
 
+func newChat(t *testing.T, s *Server, cookies ...*http.Cookie) string {
+	t.Helper()
+	rec := do(t, s, http.MethodPost, "/api/chats", `{}`, cookies...)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create chat: %d %s", rec.Code, rec.Body.String())
+	}
+	var c chatJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &c); err != nil {
+		t.Fatal(err)
+	}
+	return c.ID
+}
+
+func postStream(t *testing.T, s *Server, chatID, question string) []sseEvent {
+	t.Helper()
+	rec := do(t, s, http.MethodPost, "/api/chats/"+chatID+"/stream", `{"question":`+quote(question)+`}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: got %d, want 200 (body %q)", rec.Code, rec.Body.String())
 	}
@@ -85,15 +119,15 @@ func quote(s string) string {
 }
 
 // The stream's shape is the contract the UI's status steps are built on: every
-// tool call is announced active before it is announced done, and the answer
-// arrives last.
+// tool call is announced active before it is announced done, a chart may follow
+// the steps, and the answer arrives last.
 func TestChatStreamEmitsStepsThenAnswer(t *testing.T) {
-	events := postStream(t, mockServer(t), "Does my sleep actually affect my pace?")
+	s := mockServer(t)
+	events := postStream(t, s, newChat(t, s), "Does my sleep actually affect my pace?")
 
 	if len(events) < 3 {
 		t.Fatalf("expected several events, got %d: %+v", len(events), events)
 	}
-
 	last := events[len(events)-1]
 	if last.Name != "answer" {
 		t.Fatalf("last event: got %q, want %q", last.Name, "answer")
@@ -102,8 +136,6 @@ func TestChatStreamEmitsStepsThenAnswer(t *testing.T) {
 		t.Error("answer event carried no answer text")
 	}
 
-	// Every step must be paired: an unmatched "active" leaves a step pulsing in
-	// the UI forever. A chart may follow the steps, never precede one.
 	open := map[string]bool{}
 	sawChart := false
 	for _, ev := range events[:len(events)-1] {
@@ -115,7 +147,10 @@ func TestChatStreamEmitsStepsThenAnswer(t *testing.T) {
 			t.Fatalf("unexpected event %q before the answer", ev.Name)
 		}
 		if sawChart {
-			t.Fatalf("step %v arrived after the chart; the chart comes after every step", ev.Data)
+			t.Fatalf("step %v arrived after the chart", ev.Data)
+		}
+		if ev.Data["source"] != "garmin" {
+			t.Errorf("unexpected %v step", ev.Data["source"])
 		}
 		key, _ := ev.Data["source"].(string)
 		key += "/" + ev.Data["tool"].(string)
@@ -139,36 +174,9 @@ func TestChatStreamEmitsStepsThenAnswer(t *testing.T) {
 	}
 }
 
-// Every step names Garmin, the only source, and the answer reports it: the
-// status steps and the "sources" field describe the same work.
-func TestChatStreamStepsAreGarminOnly(t *testing.T) {
-	for _, q := range []string{
-		"Does my sleep actually affect my pace?",
-		"How did my last three training blocks compare?",
-	} {
-		events := postStream(t, mockServer(t), q)
-		steps := 0
-		for _, ev := range events {
-			if ev.Name == "step" {
-				steps++
-				if ev.Data["source"] != "garmin" {
-					t.Errorf("%q: unexpected %v step", q, ev.Data["source"])
-				}
-			}
-		}
-		if steps == 0 {
-			t.Errorf("%q: no steps streamed", q)
-		}
-		sources, _ := events[len(events)-1].Data["sources"].([]any)
-		if len(sources) != 1 || sources[0] != "garmin" {
-			t.Errorf("%q: answer sources: got %v, want [garmin]", q, sources)
-		}
-	}
-}
-
-// The chart frame is the contract the card is built on: one at most, after the
-// steps and before the answer, carrying the validated spec; and a scenario
-// whose spec fails validation emits none while its prose still arrives.
+// The chart frame contract: one at most, after the steps and before the
+// answer, carrying the validated spec; an invalid spec emits none while the
+// prose still arrives.
 func TestChatStreamChartFrames(t *testing.T) {
 	cases := []struct {
 		question  string
@@ -181,211 +189,248 @@ func TestChatStreamChartFrames(t *testing.T) {
 		{"I have a half marathon in 10 weeks. Am I on track?", false, ""}, // invalid spec: dropped
 	}
 	for _, tc := range cases {
-		events := postStream(t, mockServer(t), tc.question)
+		s := mockServer(t)
+		events := postStream(t, s, newChat(t, s), tc.question)
 		var charts []sseEvent
 		for _, ev := range events {
 			if ev.Name == "chart" {
 				charts = append(charts, ev)
 			}
 		}
+		answer := events[len(events)-1]
 		if tc.wantChart {
-			if len(charts) != 1 {
-				t.Errorf("%q: got %d chart frames, want 1", tc.question, len(charts))
-				continue
+			if len(charts) != 1 || charts[0].Data["kind"] != tc.kind || events[len(events)-2].Name != "chart" || answer.Data["chart"] == nil {
+				t.Errorf("%q: charts %+v, answer chart %v", tc.question, charts, answer.Data["chart"])
 			}
-			if charts[0].Data["kind"] != tc.kind {
-				t.Errorf("%q: chart kind %v, want %s", tc.question, charts[0].Data["kind"], tc.kind)
-			}
-			if events[len(events)-2].Name != "chart" {
-				t.Errorf("%q: chart is not the frame right before the answer", tc.question)
-			}
-			if answerChart := events[len(events)-1].Data["chart"]; answerChart == nil {
-				t.Errorf("%q: answer frame carries no chart", tc.question)
-			}
-		} else {
-			if len(charts) != 0 {
-				t.Errorf("%q: got %d chart frames, want none", tc.question, len(charts))
-			}
-			if answer, _ := events[len(events)-1].Data["answer"].(string); answer == "" {
-				t.Errorf("%q: prose did not arrive", tc.question)
-			}
-			if events[len(events)-1].Data["chart"] != nil {
-				t.Errorf("%q: answer frame carries a chart", tc.question)
-			}
+		} else if len(charts) != 0 || answer.Data["chart"] != nil || answer.Data["answer"] == "" {
+			t.Errorf("%q: charts %+v, answer %v", tc.question, charts, answer.Data)
 		}
 	}
 }
 
-// An unrecognised question must say it has no answer rather than return a
-// plausible-sounding one: mock data presented as real is the failure mode that
-// would embarrass a demo.
-func TestChatStreamUnknownQuestionAdmitsItIsMocked(t *testing.T) {
-	events := postStream(t, mockServer(t), "what is the capital of France?")
+// A saved chat remembers its turns: the question and the reply (with its
+// chart) are stored, the title comes from the first question, and the list
+// shows it.
+func TestChatIsPersistedWithTitleAndChart(t *testing.T) {
+	s := mockServer(t)
+	id := newChat(t, s)
+	postStream(t, s, id, "Does my sleep actually affect my pace? Show me the pattern.")
 
+	rec := do(t, s, http.MethodGet, "/api/chats/"+id+"/messages", "")
+	var got struct{ Messages []messageJSON }
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Messages) != 2 || got.Messages[0].Role != "user" || got.Messages[1].Role != "assistant" {
+		t.Fatalf("messages: %+v", got.Messages)
+	}
+	if len(got.Messages[1].Chart) == 0 || !strings.Contains(string(got.Messages[1].Chart), `"scatter"`) {
+		t.Errorf("assistant message lost its chart: %s", got.Messages[1].Chart)
+	}
+
+	rec = do(t, s, http.MethodGet, "/api/chats", "")
+	var list struct{ Chats []chatJSON }
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Chats) != 1 || !strings.HasPrefix(list.Chats[0].Title, "Does my sleep actually affect my pace?") {
+		t.Errorf("chats: %+v", list.Chats)
+	}
+
+	if rec := do(t, s, http.MethodPatch, "/api/chats/"+id, `{"title":"Sleep"}`); rec.Code != http.StatusOK {
+		t.Errorf("rename: %d", rec.Code)
+	}
+	if rec := do(t, s, http.MethodDelete, "/api/chats/"+id, ""); rec.Code != http.StatusOK {
+		t.Errorf("delete: %d", rec.Code)
+	}
+	if rec := do(t, s, http.MethodGet, "/api/chats/"+id+"/messages", ""); rec.Code != http.StatusNotFound {
+		t.Errorf("messages of a deleted chat: %d", rec.Code)
+	}
+	if rec := do(t, s, http.MethodPost, "/api/chats/nope/stream", `{"question":"hi"}`); rec.Code != http.StatusNotFound {
+		t.Errorf("stream to an unknown chat: %d", rec.Code)
+	}
+}
+
+// An unrecognised question must say it has no answer rather than return a
+// plausible-sounding one.
+func TestChatStreamUnknownQuestionAdmitsItIsMocked(t *testing.T) {
+	s := mockServer(t)
+	events := postStream(t, s, newChat(t, s), "what is the capital of France?")
 	answer, _ := events[len(events)-1].Data["answer"].(string)
 	if !strings.Contains(strings.ToLower(answer), "mock mode") {
 		t.Errorf("fallback answer should say it is mocked, got %q", answer)
 	}
 }
 
-// Mock mode must not require the credentials the real path does — that is what
-// makes it usable before any account exists.
-func TestChatMockModeNeedsNoCredentials(t *testing.T) {
-	s := mockServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/chat",
-		strings.NewReader(`{"question":"Am I overtraining right now?"}`))
-	rec := httptest.NewRecorder()
-	s.Routes().ServeHTTP(rec, req)
-
+func TestStatelessChatInMockMode(t *testing.T) {
+	rec := do(t, mockServer(t), http.MethodPost, "/api/chat", `{"question":"Am I overtraining right now?"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: got %d, want 200 (body %q)", rec.Code, rec.Body.String())
 	}
 	var got chatResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode: %v", err)
+		t.Fatal(err)
 	}
-	if got.Answer == "" {
-		t.Error("no answer returned")
-	}
-	if len(got.Sources) == 0 {
-		t.Error("no sources reported")
+	if got.Answer == "" || len(got.Sources) == 0 {
+		t.Errorf("response: %+v", got)
 	}
 }
 
 func TestChatRejectsEmptyQuestion(t *testing.T) {
+	s := mockServer(t)
+	id := newChat(t, s)
 	for _, body := range []string{`{}`, `{"question":""}`, `not json`} {
-		for _, path := range []string{"/chat", "/chat/stream"} {
-			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-			rec := httptest.NewRecorder()
-			mockServer(t).Routes().ServeHTTP(rec, req)
-			if rec.Code != http.StatusBadRequest {
+		for _, path := range []string{"/api/chat", "/api/chats/" + id + "/stream"} {
+			if rec := do(t, s, http.MethodPost, path, body); rec.Code != http.StatusBadRequest {
 				t.Errorf("%s with body %q: got %d, want 400", path, body, rec.Code)
 			}
 		}
 	}
 }
 
-// The UI describes what it is connected to from this endpoint, so it must report
-// the registered sources rather than a hardcoded pair.
-func TestSourcesReportsRegisteredSourcesAndMockFlag(t *testing.T) {
+// The daily cap is a cost guard: once reached, no reply is attempted.
+func TestDailyCapReturns429(t *testing.T) {
 	s := mockServer(t)
-	s.sources = nil // GARMIN_MCP_COMMAND unset
-
-	req := httptest.NewRequest(http.MethodGet, "/sources", nil)
-	rec := httptest.NewRecorder()
-	s.Routes().ServeHTTP(rec, req)
-
-	var got sourcesResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode: %v", err)
+	id := newChat(t, s)
+	owner, _ := s.store.Owner(httptest.NewRequest("GET", "/", nil).Context())
+	// The stateless route counts too and has no step delay.
+	for i := 0; i < owner.DailyQuestionCap; i++ {
+		if rec := do(t, s, http.MethodPost, "/api/chat", `{"question":"Am I overtraining right now?"}`); rec.Code != http.StatusOK {
+			t.Fatalf("question %d: %d", i, rec.Code)
+		}
 	}
-	if len(got.Sources) != 0 {
-		t.Errorf("sources: got %v, want none", got.Sources)
+	rec := do(t, s, http.MethodPost, "/api/chats/"+id+"/stream", `{"question":"one more"}`)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("over the cap: got %d, want 429 (%s)", rec.Code, rec.Body.String())
 	}
-	if !got.Mock {
-		t.Error("mock flag should be true")
+	var me struct {
+		Usage struct{ Today, Cap int }
 	}
-}
-
-// The browser will not read any response without these, and it sends a preflight
-// for the JSON content type first.
-func TestCORSAllowsTheConfiguredOriginOnly(t *testing.T) {
-	s := mockServer(t)
-
-	tests := []struct {
-		name, origin, wantAllow string
-	}{
-		{"configured origin", "http://localhost:5173", "http://localhost:5173"},
-		{"other origin", "http://evil.example", ""},
-		{"no origin", "", ""},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodOptions, "/chat/stream", nil)
-			if tc.origin != "" {
-				req.Header.Set("Origin", tc.origin)
-			}
-			rec := httptest.NewRecorder()
-			s.Routes().ServeHTTP(rec, req)
-
-			if rec.Code != http.StatusNoContent {
-				t.Errorf("preflight status: got %d, want 204", rec.Code)
-			}
-			if got := rec.Header().Get("Access-Control-Allow-Origin"); got != tc.wantAllow {
-				t.Errorf("Allow-Origin: got %q, want %q", got, tc.wantAllow)
-			}
-		})
+	rec = do(t, s, http.MethodGet, "/api/me", "")
+	_ = json.Unmarshal(rec.Body.Bytes(), &me)
+	if me.Usage.Today != owner.DailyQuestionCap || me.Usage.Cap != owner.DailyQuestionCap {
+		t.Errorf("/me usage: %+v", me.Usage)
 	}
 }
 
-// The client holds the thread, so history has to survive the HTTP boundary
-// intact for follow-ups to work at all. Mock mode ignores it when answering, so
-// this asserts the decode rather than the behaviour — the model's use of it is
-// covered in internal/agent and, live, in the live pass.
-func TestRequestHistoryDecodesInOrder(t *testing.T) {
-	body := `{"question":"and the week before?","history":[
-		{"question":"q1","answer":"a1"},
-		{"question":"q2","answer":"a2"}
-	]}`
-	req := httptest.NewRequest(http.MethodPost, "/chat", strings.NewReader(body))
-	rec := httptest.NewRecorder()
+// Outside mock mode every /api route needs a session, login hands one out,
+// a wrong password gets nothing, and logout ends it.
+func TestLoginSessionAndLogout(t *testing.T) {
+	s := liveServer(t, "correct horse")
 
-	var got chatRequest
-	if err := json.Unmarshal([]byte(body), &got); err != nil {
-		t.Fatalf("decode: %v", err)
+	if rec := do(t, s, http.MethodGet, "/api/me", ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("/me without a session: %d", rec.Code)
 	}
-	if len(got.History) != 2 {
-		t.Fatalf("history: got %d turns, want 2", len(got.History))
+	if rec := do(t, s, http.MethodPost, "/api/login", `{"password":"wrong"}`); rec.Code != http.StatusUnauthorized {
+		t.Errorf("wrong password: %d", rec.Code)
 	}
-	prior := got.prior()
-	if prior[0].Question != "q1" || prior[0].Answer != "a1" {
-		t.Errorf("first prior turn: got %+v", prior[0])
-	}
-	if prior[1].Question != "q2" || prior[1].Answer != "a2" {
-		t.Errorf("second prior turn: got %+v", prior[1])
-	}
-
-	// And a request carrying history must still be served.
-	mockServer(t).Routes().ServeHTTP(rec, req)
+	rec := do(t, s, http.MethodPost, "/api/login", `{"password":"correct horse"}`)
 	if rec.Code != http.StatusOK {
-		t.Errorf("status: got %d, want 200 (body %q)", rec.Code, rec.Body.String())
+		t.Fatalf("login: %d %s", rec.Code, rec.Body.String())
+	}
+	var cookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookie {
+			cookie = c
+		}
+	}
+	if cookie == nil || cookie.Value == "" || !cookie.HttpOnly || cookie.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("session cookie: %+v", cookie)
+	}
+
+	rec = do(t, s, http.MethodGet, "/api/me", "", cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/me with a session: %d %s", rec.Code, rec.Body.String())
+	}
+	var me struct {
+		Garmin garminState
+		Mock   bool
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &me)
+	if me.Garmin.Status != "none" || me.Garmin.Fix == "" || me.Mock {
+		t.Errorf("/me: %+v", me)
+	}
+
+	id := newChat(t, s, cookie)
+	rec = do(t, s, http.MethodPost, "/api/chats/"+id+"/stream", `{"question":"hi"}`, cookie)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stream: %d", rec.Code)
+	}
+	// No API key: the stream opens and reports the problem in-band, the way
+	// the UI expects, and the question is still saved.
+	events := readSSE(t, rec.Body.String())
+	if len(events) != 1 || events[0].Name != "error" || !strings.Contains(events[0].Data["error"].(string), "ANTHROPIC_API_KEY") {
+		t.Errorf("events: %+v", events)
+	}
+
+	if rec := do(t, s, http.MethodPost, "/api/logout", "", cookie); rec.Code != http.StatusOK {
+		t.Errorf("logout: %d", rec.Code)
+	}
+	if rec := do(t, s, http.MethodGet, "/api/me", "", cookie); rec.Code != http.StatusUnauthorized {
+		t.Errorf("/me after logout: %d", rec.Code)
 	}
 }
 
-// A missing history field must behave as an empty conversation, not an error —
-// /chat is documented as curl-friendly with just a question.
-func TestRequestWithoutHistoryIsValid(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/chat",
-		strings.NewReader(`{"question":"am I overtraining right now?"}`))
+func TestLoginIsRateLimited(t *testing.T) {
+	s := liveServer(t, "pw")
+	var last int
+	for i := 0; i < 7; i++ {
+		last = do(t, s, http.MethodPost, "/api/login", `{"password":"nope"}`).Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Errorf("seventh attempt: got %d, want 429", last)
+	}
+}
+
+// A pasted bundle that is not a bundle is refused before anything is spawned.
+func TestGarminTokensRejectsGarbage(t *testing.T) {
+	s := liveServer(t, "pw")
+	s.cfg.TokenKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	s = New(s.cfg, nil)
+	rec := do(t, s, http.MethodPost, "/api/login", `{"password":"pw"}`)
+	cookie := rec.Result().Cookies()[0]
+	rec = do(t, s, http.MethodPost, "/api/garmin/tokens", `{"bundle":"abc"}`, cookie)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("garbage bundle: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Health never needs a session, reports db off without a pool, and the Garmin
+// state from the row.
+func TestHealthz(t *testing.T) {
+	for _, path := range []string{"/healthz", "/api/healthz"} {
+		rec := do(t, liveServer(t, "pw"), http.MethodGet, path, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d", path, rec.Code)
+		}
+		var got map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &got)
+		if got["status"] != "ok" || got["db"] != "off" || got["garmin"] != "none" {
+			t.Errorf("%s: %v", path, got)
+		}
+	}
+}
+
+// The UI is served from the same origin for every non-API path, with the
+// index for unknown routes (history mode).
+func TestEmbeddedUIFallsBackToIndex(t *testing.T) {
+	for _, path := range []string{"/", "/c/abc", "/login"} {
+		rec := do(t, mockServer(t), http.MethodGet, path, "")
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "RunCoach") {
+			t.Errorf("%s: %d", path, rec.Code)
+		}
+	}
+}
+
+// CORS stays off unless an origin is configured.
+func TestCORSOffByDefault(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "/api/chats", nil)
+	req.Header.Set("Origin", "http://localhost:5173")
 	rec := httptest.NewRecorder()
 	mockServer(t).Routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: got %d, want 200 (body %q)", rec.Code, rec.Body.String())
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Error("CORS header set with no ALLOWED_ORIGIN")
 	}
 }
 
-// Mock mode and a server without DATABASE_URL have no database, so /healthz
-// must answer instead of panicking on a nil pool — and must not claim the
-// database is "up" when there isn't one.
-func TestHealthzWithoutADatabase(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	rec := httptest.NewRecorder()
-	mockServer(t).Routes().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: got %d, want 200", rec.Code)
-	}
-	var got map[string]string
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if got["status"] != "ok" {
-		t.Errorf("status: got %q, want ok", got["status"])
-	}
-	if got["db"] == "up" {
-		t.Error(`db reported "up" with no database connected`)
-	}
-	if got["db"] != "off" {
-		t.Errorf("db: got %q, want off", got["db"])
-	}
-}
+var _ = store.ErrNotFound

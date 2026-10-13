@@ -22,3 +22,8 @@ vendor/
 
 # Local Postgres data (if run in-repo)
 /pgdata/
+
+# The embedded UI build (backend/internal/web/dist) is produced by the
+# Dockerfile; only the placeholder index.html is committed.
+backend/internal/web/dist/*
+!backend/internal/web/dist/index.html

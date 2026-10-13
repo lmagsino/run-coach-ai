@@ -10,30 +10,14 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/lmagsino/run-coach-ai/backend/internal/agent"
 	"github.com/lmagsino/run-coach-ai/backend/internal/chart"
+	"github.com/lmagsino/run-coach-ai/backend/internal/garmin"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mockchat"
+	"github.com/lmagsino/run-coach-ai/backend/internal/store"
 )
 
 type chatRequest struct {
 	Question string `json:"question"`
-	// History is the completed exchanges earlier in this conversation, oldest
-	// first, so follow-up questions resolve against them (spec §5). The client
-	// holds the thread — the server keeps no session state, which is why it has
-	// to be re-sent each request.
-	History []historyTurn `json:"history"`
-}
-
-type historyTurn struct {
-	Question string `json:"question"`
-	Answer   string `json:"answer"`
-}
-
-func (r chatRequest) prior() []agent.PriorTurn {
-	out := make([]agent.PriorTurn, 0, len(r.History))
-	for _, h := range r.History {
-		out = append(out, agent.PriorTurn{Question: h.Question, Answer: h.Answer})
-	}
-	return out
 }
 
 type chatResponse struct {
@@ -46,8 +30,8 @@ type chatResponse struct {
 }
 
 // stepEvent narrates one tool call on the SSE stream. There is deliberately no
-// label field: turning "get_sleep_data" into "Checking your Garmin sleep & HRV"
-// is presentation, and DESIGN.md owns that copy, so the frontend maps it.
+// label field: turning "get_sleep_data" into "Checking your Garmin sleep" is
+// presentation, and DESIGN.md owns that copy, so the frontend maps it.
 type stepEvent struct {
 	Source string `json:"source"`
 	Tool   string `json:"tool"`
@@ -57,7 +41,7 @@ type stepEvent struct {
 
 // chatTimeout is generous because the tool-calling loop makes several model and
 // MCP round-trips before it can answer.
-const chatTimeout = 90 * time.Second
+const chatTimeout = 120 * time.Second
 
 // readRequest decodes and validates the request body, writing the error response
 // itself and returning ok=false if it is unusable.
@@ -72,36 +56,66 @@ func readRequest(w http.ResponseWriter, r *http.Request) (chatRequest, bool) {
 	return req, true
 }
 
-// prepareAgent spawns the Garmin MCP server and returns a ready Agent plus a
-// cleanup func. On failure it returns an HTTP status and message for the caller
-// to render — as JSON for /chat, as an SSE error event for /chat/stream.
-func (s *Server) prepareAgent(ctx context.Context) (*agent.Agent, func(), int, error) {
+// prepareAgent opens the runner's Garmin source and returns a ready Agent plus
+// a cleanup func. On failure it returns an HTTP status and a message for the
+// caller to render — as JSON for /api/chat, as an SSE error event mid-stream.
+func (s *Server) prepareAgent(ctx context.Context, runnerID int64) (*agent.Agent, func(), int, error) {
 	if s.cfg.AnthropicAPIKey == "" {
 		return nil, nil, http.StatusServiceUnavailable, errors.New("ANTHROPIC_API_KEY is not set")
 	}
-	if s.garminMCP == nil {
-		return nil, nil, http.StatusServiceUnavailable,
-			errors.New("GARMIN_MCP_COMMAND is not set — Garmin is the only data source")
+	session, cleanup, err := s.garmin.Connect(ctx, runnerID)
+	if errors.Is(err, garmin.ErrNotConnected) {
+		return nil, nil, http.StatusPreconditionRequired, errors.New(fixNone)
 	}
-
-	// A configured-but-broken server is a real error, not something to quietly
-	// answer around: without its data the coach has nothing grounded to say.
-	session, err := s.garminMCP.Connect(ctx)
 	if err != nil {
+		_ = s.store.SetGarminStatus(ctx, runnerID, store.GarminUnavailable, err.Error(), false)
 		return nil, nil, http.StatusBadGateway, err
 	}
-	cleanup := func() { session.Close() }
-	source := agent.Source{Name: mcpclient.SourceGarmin, Session: session}
-
-	return agent.New(s.anthropic, anthropic.Model(s.cfg.AnthropicModel), source), cleanup, 0, nil
+	source := agent.Source{Name: mcpclient.SourceGarmin, Session: session, Allow: mcpclient.ReadOnly}
+	ag := agent.New(s.anthropic, anthropic.Model(s.cfg.AnthropicModel), source).WithEffort(s.cfg.AnthropicEffort)
+	return ag, cleanup, 0, nil
 }
 
-// handleChat answers a training question in a single round-trip. Kept alongside
-// the streaming endpoint because it is the curl-friendly shape the CLI checks and
-// CLAUDE.md document; the UI uses /chat/stream so it can narrate progress.
+// recordOutcome updates the Garmin row from how a reply went: a clean reply
+// marks it connected, an auth failure marks it expired, anything else
+// unavailable. The chip reads the row, never Garmin.
+func (s *Server) recordOutcome(ctx context.Context, runnerID int64, result *agent.Result, err error) {
+	if s.cfg.MockMode {
+		return
+	}
+	switch {
+	case err == nil && result != nil:
+		failedAll := len(result.ToolCalls) > 0
+		for _, c := range result.ToolCalls {
+			if !c.Failed {
+				failedAll = false
+			}
+		}
+		if failedAll {
+			_ = s.store.SetGarminStatus(ctx, runnerID, store.GarminUnavailable, "every Garmin tool call failed", false)
+			return
+		}
+		_ = s.store.SetGarminStatus(ctx, runnerID, store.GarminConnected, "", true)
+	case err != nil:
+		classified := garmin.Classify(err)
+		status := store.GarminUnavailable
+		if errors.Is(classified, garmin.ErrAuth) {
+			status = store.GarminExpired
+		}
+		_ = s.store.SetGarminStatus(ctx, runnerID, status, err.Error(), false)
+	}
+}
+
+// handleChat answers one question with no chat and no history: the
+// curl-friendly shape for the live pass. It still counts against the cap.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	req, ok := readRequest(w, r)
 	if !ok {
+		return
+	}
+	id := runnerID(r)
+	if status, err := s.checkCap(r.Context(), id); err != nil {
+		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -110,96 +124,59 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	if s.cfg.MockMode {
 		scenario := mockchat.Match(req.Question)
+		_ = s.store.AddUsage(ctx, id, time.Now(), store.Usage{Questions: 1})
 		writeJSON(w, http.StatusOK, chatResponse{
 			Answer: scenario.Answer, Sources: scenario.Sources(), Chart: scenario.ValidChart(),
 		})
 		return
 	}
 
-	ag, cleanup, status, err := s.prepareAgent(ctx)
+	ag, cleanup, status, err := s.prepareAgent(ctx, id)
 	if err != nil {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
 	defer cleanup()
 
-	result, err := ag.AnswerInConversation(ctx, req.prior(), req.Question)
+	result, err := ag.Answer(ctx, req.Question)
+	s.recordOutcome(ctx, id, result, err)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
+	_ = s.store.AddUsage(ctx, id, time.Now(), usageOf(result))
 	writeJSON(w, http.StatusOK, chatResponse{Answer: result.Answer, Sources: result.Sources(), Chart: result.Chart})
 }
 
-// handleChatStream answers the same question over SSE, emitting a step event as
-// each tool call starts and finishes so the UI can show what is being read
-// while it happens (spec §5, DESIGN.md §5).
-//
-// It is a POST rather than the GET that EventSource wants, so the question stays
-// in the body: putting user text in a query string would leak it into access logs
-// and cap its length. The frontend reads the stream with fetch instead.
-func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
-	req, ok := readRequest(w, r)
-	if !ok {
-		return
-	}
-
-	// Checked before any SSE header is written — once the stream opens there is
-	// no status code left to fail with.
-	sse, ok := newSSEWriter(w)
-	if !ok {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "streaming unsupported by this server",
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), chatTimeout)
-	defer cancel()
-
-	if s.cfg.MockMode {
-		streamMock(ctx, sse, req.Question)
-		return
-	}
-
-	ag, cleanup, _, err := s.prepareAgent(ctx)
+// checkCap returns 429 once the runner has asked today's allowance. It is a
+// cost guard, so it counts questions asked, not answers delivered.
+func (s *Server) checkCap(ctx context.Context, runnerID int64) (int, error) {
+	owner, err := s.store.Owner(ctx)
 	if err != nil {
-		// The stream has already begun, so failures are in-band from here on.
-		sse.send("error", map[string]string{"error": err.Error()})
-		return
+		return http.StatusInternalServerError, err
 	}
-	defer cleanup()
-
-	// Observers run synchronously on Answer's goroutine, which is this handler's
-	// goroutine, so writing to the stream from here needs no extra locking.
-	ag.Observe(func(ev agent.Event) {
-		// The chart is sent the moment it validates, which is after the data
-		// tools and before the prose, so the card is ready when the answer lands.
-		if ev.Kind == agent.EventChart {
-			sse.send("chart", ev.Chart)
-			return
-		}
-		state := "active"
-		if ev.Kind == agent.EventToolEnd {
-			state = "done"
-			if ev.Failed {
-				state = "failed"
-			}
-		}
-		sse.send("step", stepEvent{Source: ev.Source, Tool: ev.Tool, State: state})
-	})
-
-	result, err := ag.AnswerInConversation(ctx, req.prior(), req.Question)
+	usage, err := s.store.Usage(ctx, runnerID, time.Now())
 	if err != nil {
-		sse.send("error", map[string]string{"error": err.Error()})
-		return
+		return http.StatusInternalServerError, err
 	}
-	sse.send("answer", chatResponse{Answer: result.Answer, Sources: result.Sources(), Chart: result.Chart})
+	if usage.Questions >= owner.DailyQuestionCap {
+		return http.StatusTooManyRequests, errors.New("daily cap reached; it resets at midnight UTC")
+	}
+	return 0, nil
+}
+
+func usageOf(result *agent.Result) store.Usage {
+	return store.Usage{
+		Questions:         1,
+		InputTokens:       result.Usage.InputTokens,
+		CachedInputTokens: result.Usage.CachedInputTokens,
+		OutputTokens:      result.Usage.OutputTokens,
+	}
 }
 
 // streamMock replays a canned scenario with the event sequence and rough timing
 // a real answer produces, so the UI is exercised the way a live reply drives it.
-func streamMock(ctx context.Context, sse *sseWriter, question string) {
+func streamMock(ctx context.Context, sse *sseWriter, question string) (chatResponse, bool) {
 	scenario := mockchat.Match(question)
 
 	for _, step := range scenario.Steps {
@@ -208,7 +185,7 @@ func streamMock(ctx context.Context, sse *sseWriter, question string) {
 		case <-time.After(mockchat.StepDelay):
 		case <-ctx.Done():
 			// Client navigated away, or the timeout fired. Stop pretending to work.
-			return
+			return chatResponse{}, false
 		}
 		state := "done"
 		if step.Failed {
@@ -223,5 +200,7 @@ func streamMock(ctx context.Context, sse *sseWriter, question string) {
 	if chartSpec != nil {
 		sse.send("chart", chartSpec)
 	}
-	sse.send("answer", chatResponse{Answer: scenario.Answer, Sources: scenario.Sources(), Chart: chartSpec})
+	resp := chatResponse{Answer: scenario.Answer, Sources: scenario.Sources(), Chart: chartSpec}
+	sse.send("answer", resp)
+	return resp, true
 }

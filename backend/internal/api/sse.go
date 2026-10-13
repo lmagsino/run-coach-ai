@@ -1,15 +1,24 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 )
+
+// keepaliveEvery is how often an idle stream gets a comment line. A reply can
+// spend 15 to 40 seconds in the tool loop with nothing to say, and a hosting
+// proxy that sees no bytes for a minute may close the connection.
+const keepaliveEvery = 15 * time.Second
 
 // sseWriter emits Server-Sent Events on a response. Each event is flushed
 // immediately: the whole point is that the client sees a tool call start before
 // the answer exists, so buffering would defeat it.
 type sseWriter struct {
+	mu      sync.Mutex
 	w       http.ResponseWriter
 	flusher http.Flusher
 }
@@ -43,6 +52,26 @@ func (s *sseWriter) send(event string, data any) {
 		payload = []byte(`{"error":"failed to encode event"}`)
 		event = "error"
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	fmt.Fprintf(s.w, "event: %s\ndata: %s\n\n", event, payload)
 	s.flusher.Flush()
+}
+
+// keepalive writes a comment line every keepaliveEvery until ctx ends. Comment
+// lines are ignored by every SSE parser, so the frontend sees nothing.
+func (s *sseWriter) keepalive(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.mu.Lock()
+			fmt.Fprint(s.w, ": keepalive\n\n")
+			s.flusher.Flush()
+			s.mu.Unlock()
+		}
+	}
 }
