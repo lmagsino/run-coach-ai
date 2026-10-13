@@ -111,10 +111,10 @@ func TestSleepVersusPaceCombinesBothTools(t *testing.T) {
 	assertBodyContains(t, final.Body, "sleep dataset", sleepPayload)
 	assertBodyContains(t, final.Body, "run dataset", runsPayload)
 
-	// And the model was offered both tools in the first place.
+	// And the model was offered both tools in the first place, plus the chart.
 	first := model.Requests()[0]
 	assertEqualStrings(t, "tools offered", first.Tools,
-		[]string{"garmin__get_activities_by_date", "garmin__get_sleep_summary_range"})
+		[]string{"garmin__get_activities_by_date", "garmin__get_sleep_summary_range", "coach__show_chart"})
 }
 
 // "Am I overtraining?" — the agent reaches for the second tool only after

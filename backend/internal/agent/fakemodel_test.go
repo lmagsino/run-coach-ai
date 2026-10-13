@@ -181,3 +181,10 @@ func (turn fakeTurn) responseJSON(t *testing.T) string {
 		"usage": {"input_tokens": 1, "output_tokens": 1}
 	}`, strings.Join(blocks, ","), stopReason)
 }
+
+// startFakeModelClient is startFakeModel for tests that never call the model.
+func startFakeModelClient(t *testing.T) anthropic.Client {
+	t.Helper()
+	client, _ := startFakeModel(t)
+	return client
+}

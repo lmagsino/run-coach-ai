@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/lmagsino/run-coach-ai/backend/internal/chart"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -64,6 +65,20 @@ const garminCategoryMap = `Finding the right Garmin tool (prefix garmin__):
 - Prefer one range tool over many single-day calls. Pass return_timeseries=false unless the question needs intra-day detail.
 - Make at most eight tool calls per answer; ask for several in one turn when they do not depend on each other.`
 
+// chartRules teaches when a chart earns its place. The tool is offered under
+// tool_choice auto (forced choice is rejected on Opus 5.5), so the prompt is
+// what decides the chart rate (ADR 0005).
+const chartRules = `Charts (tool coach__show_chart):
+- Show at most one chart, and only when the answer is a pattern over time or a relationship between two measures. Never chart a single number; use the figure line for that.
+- Reshape the data yourself into the points: one point per run, night or week. Pace goes in seconds per kilometre with y_unit "min/km".
+- Two line series only when they share a unit. Two measures on different units are two charts; pick the one that carries the answer.
+- Call the chart tool before writing the prose, after the data tools. The prose must still stand on its own if the chart is dropped.`
+
+// CoachSource names the built-in source whose only tool is the chart. It is
+// not a data source: a call is answered in-process and never counts towards
+// Result.Sources.
+const CoachSource = "coach"
+
 // maxTurns bounds the tool loop; the prompt also tells the model the budget.
 const maxTurns = 8
 
@@ -99,14 +114,17 @@ const (
 	EventToolStart EventKind = "tool_start"
 	// EventToolEnd fires once it returns, with Failed set on error.
 	EventToolEnd EventKind = "tool_end"
+	// EventChart fires when the model's chart has been validated and kept.
+	EventChart EventKind = "chart"
 )
 
-// Event is a progress report from inside the loop.
+// Event is a progress report from inside the loop. Chart is set on EventChart.
 type Event struct {
 	Kind   EventKind
 	Source string
 	Tool   string
 	Failed bool
+	Chart  *chart.Spec
 }
 
 // Observer receives Events as the loop runs. It is called synchronously from
@@ -134,11 +152,13 @@ type Usage struct {
 	OutputTokens      int64
 }
 
-// Result is a finished answer plus the trail of tool calls that produced it.
+// Result is a finished answer plus the trail of tool calls that produced it
+// and, when the model asked for one and it validated, the chart.
 type Result struct {
 	Answer    string
 	ToolCalls []ToolCall
 	Usage     Usage
+	Chart     *chart.Spec
 }
 
 // Sources returns the distinct source names the answer drew on, in call order.
@@ -279,6 +299,11 @@ func (a *Agent) AnswerInConversation(ctx context.Context, prior []PriorTurn, que
 					fmt.Sprintf("no such tool %q", tu.Name), true))
 				continue
 			}
+			if ref.source == CoachSource {
+				out, isErr := a.showChart(result, tu.JSON.Input.Raw())
+				results = append(results, anthropic.NewToolResultBlock(tu.ID, out, isErr))
+				continue
+			}
 			a.emit(Event{Kind: EventToolStart, Source: ref.source, Tool: ref.tool})
 			out, callErr := callTool(ctx, ref, tu.JSON.Input.Raw())
 			a.emit(Event{
@@ -292,6 +317,26 @@ func (a *Agent) AnswerInConversation(ctx context.Context, prior []PriorTurn, que
 		messages = append(messages, anthropic.NewUserMessage(results...))
 	}
 	return nil, fmt.Errorf("gave up after %d tool-use turns without a final answer", maxTurns)
+}
+
+// showChart answers the virtual chart tool in-process: the first valid spec in
+// a reply is kept and announced; a second call is refused with the first kept;
+// an invalid one returns the validator's message, naming the field, so the
+// model can fix it or carry on without a chart. Nothing here reaches a source.
+func (a *Agent) showChart(result *Result, rawArgs string) (string, bool) {
+	if result.Chart != nil {
+		return "One chart per reply; the first one is kept. Continue with the prose.", true
+	}
+	var spec chart.Spec
+	if err := json.Unmarshal([]byte(rawArgs), &spec); err != nil {
+		return fmt.Sprintf("invalid chart arguments: %v", err), true
+	}
+	if err := spec.Validate(); err != nil {
+		return fmt.Sprintf("chart rejected, %v. Fix it or continue without a chart.", err), true
+	}
+	result.Chart = &spec
+	a.emit(Event{Kind: EventChart, Source: CoachSource, Tool: chart.ToolName, Chart: &spec})
+	return "Chart accepted; it will be shown with your reply. Continue with the prose.", false
 }
 
 // systemPrompt assembles the instructions for this agent's actual source set:
@@ -322,6 +367,9 @@ func (a *Agent) systemPrompt() string {
 	}
 
 	b.WriteString("\n\n")
+	b.WriteString(chartRules)
+
+	b.WriteString("\n\n")
 	b.WriteString(answerFormat)
 
 	fmt.Fprintf(&b, "\n\nThe current date and time is %s. Use it to resolve relative "+
@@ -334,7 +382,8 @@ func (a *Agent) systemPrompt() string {
 // buildTools converts every source's MCP tools into Anthropic tool definitions
 // with source-namespaced names, plus the routing table to undo the namespacing.
 // A source's Allow filter is applied here, so a denied tool is never offered
-// and never routable.
+// and never routable. The built-in chart tool is appended last, under the
+// coach source, and routes to no session.
 func (a *Agent) buildTools(ctx context.Context) ([]anthropic.ToolUnionParam, map[string]toolRef, error) {
 	var tools []anthropic.ToolUnionParam
 	router := map[string]toolRef{}
@@ -357,6 +406,11 @@ func (a *Agent) buildTools(ctx context.Context) ([]anthropic.ToolUnionParam, map
 			}})
 		}
 	}
+
+	chartTool := chart.ToolDefinition()
+	chartTool.Name = CoachSource + toolNameSep + chart.ToolName
+	router[chartTool.Name] = toolRef{source: CoachSource, tool: chart.ToolName}
+	tools = append(tools, anthropic.ToolUnionParam{OfTool: &chartTool})
 	return tools, router, nil
 }
 

@@ -36,7 +36,8 @@ func TestBuildToolsNamespacesBothSources(t *testing.T) {
 		t.Fatalf("buildTools: %v", err)
 	}
 
-	want := []string{"gateway__get_activities", "garmin__get_activities", "garmin__get_sleep_data"}
+	// The built-in chart tool is always last, under the coach source.
+	want := []string{"gateway__get_activities", "garmin__get_activities", "garmin__get_sleep_data", "coach__show_chart"}
 	if len(tools) != len(want) {
 		t.Fatalf("got %d tools, want %d: %+v", len(tools), len(want), toolNames(tools))
 	}
@@ -105,8 +106,8 @@ func TestBuildToolsAppliesTheSourceFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildTools: %v", err)
 	}
-	if got := toolNames(tools); len(got) != 1 || got[0] != "garmin__get_sleep_data" {
-		t.Errorf("offered tools: got %v, want only garmin__get_sleep_data", got)
+	if got := toolNames(tools); len(got) != 2 || got[0] != "garmin__get_sleep_data" || got[1] != "coach__show_chart" {
+		t.Errorf("offered tools: got %v, want garmin__get_sleep_data and the chart tool only", got)
 	}
 	if _, ok := router["garmin__delete_activity"]; ok {
 		t.Error("a denied tool is routable")

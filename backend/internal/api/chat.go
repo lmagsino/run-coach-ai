@@ -9,6 +9,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/lmagsino/run-coach-ai/backend/internal/agent"
+	"github.com/lmagsino/run-coach-ai/backend/internal/chart"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mockchat"
 )
@@ -40,6 +41,8 @@ type chatResponse struct {
 	// Sources actually queried while answering, in call order. Empty means
 	// Claude answered without reaching for any tool.
 	Sources []string `json:"sources"`
+	// Chart is the one validated chart the reply carries, or null (ADR 0005).
+	Chart *chart.Spec `json:"chart"`
 }
 
 // stepEvent narrates one tool call on the SSE stream. There is deliberately no
@@ -108,7 +111,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.MockMode {
 		scenario := mockchat.Match(req.Question)
 		writeJSON(w, http.StatusOK, chatResponse{
-			Answer: scenario.Answer, Sources: scenario.Sources(),
+			Answer: scenario.Answer, Sources: scenario.Sources(), Chart: scenario.ValidChart(),
 		})
 		return
 	}
@@ -125,7 +128,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, chatResponse{Answer: result.Answer, Sources: result.Sources()})
+	writeJSON(w, http.StatusOK, chatResponse{Answer: result.Answer, Sources: result.Sources(), Chart: result.Chart})
 }
 
 // handleChatStream answers the same question over SSE, emitting a step event as
@@ -170,6 +173,12 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	// Observers run synchronously on Answer's goroutine, which is this handler's
 	// goroutine, so writing to the stream from here needs no extra locking.
 	ag.Observe(func(ev agent.Event) {
+		// The chart is sent the moment it validates, which is after the data
+		// tools and before the prose, so the card is ready when the answer lands.
+		if ev.Kind == agent.EventChart {
+			sse.send("chart", ev.Chart)
+			return
+		}
 		state := "active"
 		if ev.Kind == agent.EventToolEnd {
 			state = "done"
@@ -185,7 +194,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		sse.send("error", map[string]string{"error": err.Error()})
 		return
 	}
-	sse.send("answer", chatResponse{Answer: result.Answer, Sources: result.Sources()})
+	sse.send("answer", chatResponse{Answer: result.Answer, Sources: result.Sources(), Chart: result.Chart})
 }
 
 // streamMock replays a canned scenario with the event sequence and rough timing
@@ -208,5 +217,11 @@ func streamMock(ctx context.Context, sse *sseWriter, question string) {
 		sse.send("step", stepEvent{Source: step.Source, Tool: step.Tool, State: state})
 	}
 
-	sse.send("answer", chatResponse{Answer: scenario.Answer, Sources: scenario.Sources()})
+	// The same gate the live path applies: an invalid chart emits no frame and
+	// the prose still arrives, so the drop path is exercisable in mock mode.
+	chartSpec := scenario.ValidChart()
+	if chartSpec != nil {
+		sse.send("chart", chartSpec)
+	}
+	sse.send("answer", chatResponse{Answer: scenario.Answer, Sources: scenario.Sources(), Chart: chartSpec})
 }

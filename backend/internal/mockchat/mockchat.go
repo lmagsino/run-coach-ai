@@ -12,9 +12,11 @@
 package mockchat
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
+	"github.com/lmagsino/run-coach-ai/backend/internal/chart"
 	"github.com/lmagsino/run-coach-ai/backend/internal/mcpclient"
 )
 
@@ -34,6 +36,63 @@ type Scenario struct {
 	Match  []string
 	Steps  []Step
 	Answer string
+	// Chart is what the model would have passed to coach__show_chart. It goes
+	// through the same validation as a live call (ValidChart), so one scenario
+	// deliberately carries an invalid spec to prove the drop path.
+	Chart *chart.Spec
+}
+
+// ValidChart returns the scenario's chart if it passes validation, else nil:
+// the mock applies the live gate rather than trusting its own data.
+func (s Scenario) ValidChart() *chart.Spec {
+	if s.Chart == nil || s.Chart.Validate() != nil {
+		return nil
+	}
+	return s.Chart
+}
+
+// sleepVsPace is eight long runs: sleep the night before (h) against next-day
+// pace (s/km). The four short nights are the four slow runs.
+var sleepVsPace = &chart.Spec{
+	Kind: "scatter", Title: "Sleep the night before vs long-run pace", Data: "sleep",
+	XLabel: "Sleep", XUnit: "h", YLabel: "Pace", YUnit: "min/km",
+	Series: []chart.Series{{Label: "Long runs", Points: []chart.Point{
+		{X: "7.8", Y: 278}, {X: "8.1", Y: 275}, {X: "5.9", Y: 302}, {X: "6.1", Y: 298},
+		{X: "7.9", Y: 276}, {X: "8.2", Y: 273}, {X: "5.7", Y: 306}, {X: "6.0", Y: 301},
+	}}},
+	Caption: "Every night under 6.2 hours sits in the slow cluster: about 25 s/km slower at the same distance.",
+}
+
+// weeklyKm is twelve weeks of distance, the current week unfinished.
+var weeklyKm = &chart.Spec{
+	Kind: "bar", Title: "Weekly distance, last 12 weeks", Data: "activities",
+	XLabel: "Week of", XUnit: "date", YLabel: "Distance", YUnit: "km",
+	Series: []chart.Series{{Label: "km", Points: weekPoints(
+		[]float64{42, 46, 50, 38, 54, 57, 60, 44, 62, 65, 58, 31}, "2026-07-27")}},
+	Caption: "Up from 42 km to 65 km with two planned step-back weeks. The lighter bar is this week so far.",
+}
+
+// tooFewPoints is deliberately invalid (three points) to prove that an invalid
+// chart drops while the prose still renders.
+var tooFewPoints = &chart.Spec{
+	Kind: "line", Title: "Readiness", Data: "readiness",
+	XLabel: "Day", XUnit: "date", YLabel: "Score", YUnit: "score",
+	Series: []chart.Series{{Label: "Readiness", Points: []chart.Point{
+		{X: "2026-10-10", Y: 71}, {X: "2026-10-11", Y: 68}, {X: "2026-10-12", Y: 74},
+	}}},
+	Caption: "Three days is not a pattern.",
+}
+
+// weekPoints builds one point per week starting at startISO (Monday), marking
+// the last one partial.
+func weekPoints(km []float64, startISO string) []chart.Point {
+	start, _ := time.Parse("2006-01-02", startISO)
+	out := make([]chart.Point, len(km))
+	for i, v := range km {
+		d := start.AddDate(0, 0, 7*i)
+		out[i] = chart.Point{X: fmt.Sprintf("%04d-%02d-%02d", d.Year(), d.Month(), d.Day()), Y: v, Partial: i == len(km)-1}
+	}
+	return out
 }
 
 // StepDelay is how long each pretend tool call takes. Long enough that the
@@ -54,6 +113,7 @@ var scenarios = []Scenario{
 			{Source: garmin, Tool: "get_hrv_trend"},
 			{Source: garmin, Tool: "get_activities_by_date"},
 		},
+		Chart: sleepVsPace,
 		Answer: `Yes — and the pattern is consistent enough to plan around.
 
 Across your last eight weeks, the nights you slept under six hours were followed by runs that came in slower almost every time. Your HRV tells the same story: the four lowest readings all landed the morning after a short night, and each was followed by a session you rated harder than the pace justified.
@@ -86,6 +146,7 @@ Nothing here says stop. It says make the easy days genuinely easy for a week and
 			{Source: garmin, Tool: "get_activities_by_date"},
 			{Source: garmin, Tool: "get_training_load_trend"},
 		},
+		Chart: weeklyKm,
 		Answer: `The most recent block was your most consistent, though not your highest volume.
 
 Your spring block peaked highest — one 58km week — but it also had the two weeks you missed entirely. The block before it was steadier but capped out lower. This one has no missed weeks at all, and the long runs held their pace deep into the block rather than fading in the last fortnight.
@@ -103,6 +164,7 @@ Consistency is the difference, not volume. That's usually the one that shows up 
 			{Source: garmin, Tool: "get_training_readiness"},
 			{Source: garmin, Tool: "get_race_predictions"},
 		},
+		Chart: tooFewPoints,
 		Answer: `Yes — you're trending a touch ahead of pace.
 
 Your last four long runs have all come in faster than target, and the reason it's sticking is recovery: your readiness score has held in the green through the whole build while load rose, so you haven't been paying for the effort.

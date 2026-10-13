@@ -103,11 +103,19 @@ func TestChatStreamEmitsStepsThenAnswer(t *testing.T) {
 	}
 
 	// Every step must be paired: an unmatched "active" leaves a step pulsing in
-	// the UI forever.
+	// the UI forever. A chart may follow the steps, never precede one.
 	open := map[string]bool{}
+	sawChart := false
 	for _, ev := range events[:len(events)-1] {
+		if ev.Name == "chart" {
+			sawChart = true
+			continue
+		}
 		if ev.Name != "step" {
 			t.Fatalf("unexpected event %q before the answer", ev.Name)
+		}
+		if sawChart {
+			t.Fatalf("step %v arrived after the chart; the chart comes after every step", ev.Data)
 		}
 		key, _ := ev.Data["source"].(string)
 		key += "/" + ev.Data["tool"].(string)
@@ -154,6 +162,56 @@ func TestChatStreamStepsAreGarminOnly(t *testing.T) {
 		sources, _ := events[len(events)-1].Data["sources"].([]any)
 		if len(sources) != 1 || sources[0] != "garmin" {
 			t.Errorf("%q: answer sources: got %v, want [garmin]", q, sources)
+		}
+	}
+}
+
+// The chart frame is the contract the card is built on: one at most, after the
+// steps and before the answer, carrying the validated spec; and a scenario
+// whose spec fails validation emits none while its prose still arrives.
+func TestChatStreamChartFrames(t *testing.T) {
+	cases := []struct {
+		question  string
+		wantChart bool
+		kind      string
+	}{
+		{"Does my sleep actually affect my pace?", true, "scatter"},
+		{"How did my last three training blocks compare?", true, "bar"},
+		{"Am I overtraining right now?", false, ""},
+		{"I have a half marathon in 10 weeks. Am I on track?", false, ""}, // invalid spec: dropped
+	}
+	for _, tc := range cases {
+		events := postStream(t, mockServer(t), tc.question)
+		var charts []sseEvent
+		for _, ev := range events {
+			if ev.Name == "chart" {
+				charts = append(charts, ev)
+			}
+		}
+		if tc.wantChart {
+			if len(charts) != 1 {
+				t.Errorf("%q: got %d chart frames, want 1", tc.question, len(charts))
+				continue
+			}
+			if charts[0].Data["kind"] != tc.kind {
+				t.Errorf("%q: chart kind %v, want %s", tc.question, charts[0].Data["kind"], tc.kind)
+			}
+			if events[len(events)-2].Name != "chart" {
+				t.Errorf("%q: chart is not the frame right before the answer", tc.question)
+			}
+			if answerChart := events[len(events)-1].Data["chart"]; answerChart == nil {
+				t.Errorf("%q: answer frame carries no chart", tc.question)
+			}
+		} else {
+			if len(charts) != 0 {
+				t.Errorf("%q: got %d chart frames, want none", tc.question, len(charts))
+			}
+			if answer, _ := events[len(events)-1].Data["answer"].(string); answer == "" {
+				t.Errorf("%q: prose did not arrive", tc.question)
+			}
+			if events[len(events)-1].Data["chart"] != nil {
+				t.Errorf("%q: answer frame carries a chart", tc.question)
+			}
 		}
 	}
 }
