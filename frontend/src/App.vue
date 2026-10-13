@@ -1,57 +1,96 @@
 <script setup>
-// App shell: fixed header → scrollable thread → fixed composer (DESIGN.md §4).
-import { computed, onMounted, ref } from 'vue'
+// The shell (artifact Design §2, §4): a sidebar of chats beside the page on a
+// wide screen, a drawer on the phone. The login page stands alone.
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppHeader from './components/AppHeader.vue'
-import ChatThread from './components/ChatThread.vue'
-import Composer from './components/Composer.vue'
-import { useChat } from './lib/useChat.js'
-import { fetchSources, streamChat } from './lib/api.js'
+import Sidebar from './components/Sidebar.vue'
+import { useChats } from './lib/useChats.js'
+import { useSession } from './lib/useSession.js'
 
-const { turns, busy, send } = useChat(streamChat)
+const route = useRoute()
+const router = useRouter()
+const session = useSession()
+const chats = useChats()
 
-// What the backend is actually connected to. Garmin is config-gated, so this is
-// asked rather than assumed: claiming a Garmin connection that isn't there would
-// promise data the coach cannot fetch.
-const sources = ref([])
-const mock = ref(false)
-const connectionError = ref('')
+const bare = computed(() => route.name === 'login')
+const drawer = ref(false)
+const currentId = computed(() => (route.name === 'chat' ? String(route.params.id) : ''))
+const error = ref('')
 
-onMounted(async () => {
-  try {
-    const info = await fetchSources()
-    sources.value = info.sources ?? []
-    mock.value = Boolean(info.mock)
-  } catch {
-    // The composer stays usable — a failed probe shouldn't block asking, and the
-    // send attempt will surface a clearer error than this one could.
-    connectionError.value = 'Backend unreachable'
-  }
-})
-
-const SOURCE_NAMES = { garmin: 'Garmin' }
-const sourceList = computed(() =>
-  sources.value.map((s) => SOURCE_NAMES[s] ?? s).join(' & '),
+watch(
+  () => session.me.value,
+  async (me) => {
+    if (me) {
+      try {
+        await chats.load()
+      } catch (err) {
+        error.value = err?.message || 'Could not load chats'
+      }
+    } else {
+      chats.chats.value = []
+    }
+  },
+  { immediate: true },
 )
 
-// The greeting describes only what exists. With Garmin off there is nothing
-// the coach could answer, so it says so rather than inviting a question.
-const greeting = computed(() => {
-  if (sources.value.includes('garmin')) {
-    return (
-      'I can see your Garmin activities, sleep, HRV, stress, body battery and training ' +
-      'load. Ask me about your training or your recovery, or both at once.'
-    )
-  }
-  return 'Garmin is not connected yet, so there is nothing I can read. Connect it and ask again.'
-})
+watch(() => route.fullPath, () => (drawer.value = false))
+
+async function newChat() {
+  drawer.value = false
+  if (route.name === 'home') return
+  router.push('/')
+}
+
+async function remove(id) {
+  await chats.remove(id)
+  if (currentId.value === id) router.push('/')
+}
+
+async function signOut() {
+  await session.logout()
+  router.push({ name: 'login' })
+}
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <AppHeader :sources="sourceList" :mock="mock" :error="connectionError" />
-    <ChatThread :turns="turns" :greeting="greeting" />
-    <footer class="flex-none px-[18px] pt-3 pb-5 wide:px-7 wide:pt-3.5 wide:pb-[26px]">
-      <Composer :busy="busy" :mock="mock" @send="send" />
-    </footer>
+  <router-view v-if="bare" />
+  <div v-else class="flex h-full">
+    <!-- Wide: the sidebar sits beside the page. Narrow: it is a drawer. -->
+    <aside class="hidden h-full flex-none border-r border-line wide:block">
+      <Sidebar
+        :chats="chats.chats.value"
+        :current-id="currentId"
+        :garmin="session.garmin.value.status"
+        :usage="session.usage.value"
+        :mock="session.mock.value"
+        @new="newChat"
+        @open="(id) => router.push({ name: 'chat', params: { id } })"
+        @delete="remove"
+        @signout="signOut"
+      />
+    </aside>
+    <div v-if="drawer" class="fixed inset-0 z-20 flex wide:hidden">
+      <div class="h-full flex-none border-r border-line shadow-[0_0_40px_rgb(28_32_28/0.18)]">
+        <Sidebar
+          :chats="chats.chats.value"
+          :current-id="currentId"
+          :garmin="session.garmin.value.status"
+          :usage="session.usage.value"
+          :mock="session.mock.value"
+          @new="newChat"
+          @open="(id) => router.push({ name: 'chat', params: { id } })"
+          @delete="remove"
+          @signout="signOut"
+          @close="drawer = false"
+        />
+      </div>
+      <button type="button" class="flex-1 cursor-default bg-ink/20" aria-label="Close chats" @click="drawer = false" />
+    </div>
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <AppHeader :garmin="session.garmin.value.status" :mock="session.mock.value" :error="error" @menu="drawer = true" />
+      <router-view />
+    </div>
   </div>
 </template>

@@ -23,6 +23,7 @@
   --color-faint: #dfddd4; /* faint fills */
   --color-line: #dad8ce; /* hairline dividers, borders */
   --color-user: #e3e1d8; /* user message bubble */
+  --color-side: #e6e4dd; /* the sidebar, one step below paper */
   --color-accent: #2e5d4e; /* deep pine — the ONE accent */
   --color-accent-soft: #3d7161; /* accent hover */
 

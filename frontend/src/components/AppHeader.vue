@@ -1,61 +1,48 @@
 <script setup>
-// DESIGN.md §4 header + §5 connection indicator: wordmark and "Field Notes" tag
-// on the left, connection signal on the right. The connection is words, not
-// brand colours — DESIGN.md §1.4 rules out Garmin-blue, so a single accent dot
-// carries it instead.
+// DESIGN.md §4 header: wordmark and "Field Notes" tag on the left, the Garmin
+// chip on the right. Below the `wide:` breakpoint a menu button opens the
+// sidebar drawer, since the sidebar is hidden there.
+import GarminChip from './GarminChip.vue'
+
 defineProps({
-  // Human-readable source list from the backend, e.g. "Garmin". Empty while
-  // the probe is in flight.
-  sources: { type: String, default: '' },
-  // Answers are canned. Saying so is the honest counterpart to DESIGN.md §1.5's
-  // "grounded, or silent" — the alternative is presenting fabricated training
-  // data as the athlete's own.
+  garmin: { type: String, default: 'none' },
   mock: { type: Boolean, default: false },
   error: { type: String, default: '' },
 })
+defineEmits(['menu'])
 </script>
 
 <template>
   <header
     class="flex flex-none items-center justify-between gap-4 border-b border-line px-[18px] py-[15px] wide:px-7 wide:py-[18px]"
   >
-    <div class="flex flex-none items-baseline gap-[9px]">
+    <div class="flex min-w-0 flex-none items-center gap-3">
+      <button
+        type="button"
+        class="-ml-1 flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted hover:bg-faint hover:text-ink wide:hidden"
+        aria-label="Open chats"
+        @click="$emit('menu')"
+      >
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+          <path d="M3 5h12M3 9h12M3 13h12" />
+        </svg>
+      </button>
       <span class="font-display text-[17px] font-bold whitespace-nowrap -tracking-[.02em]">
         Run<b class="font-bold text-accent">Coach</b>
       </span>
-      <!-- The tag is decorative, so it yields first when space runs out. Below the
-           breakpoint it was wrapping to two lines and shoving the connection
-           status into a truncated stub. -->
-      <span
-        class="hidden font-display text-[10px] font-medium whitespace-nowrap tracking-[.18em] text-muted uppercase wide:inline"
-      >
+      <span class="hidden font-display text-[10px] font-medium whitespace-nowrap tracking-[.18em] text-muted uppercase wide:inline">
         Field Notes
       </span>
     </div>
 
-    <div
-      class="flex min-w-0 items-center gap-2 font-display text-[11px] font-medium tracking-[.14em] text-muted uppercase"
-    >
+    <div class="flex min-w-0 items-center gap-2 font-display text-[11px] font-medium tracking-[.14em] text-muted uppercase">
       <template v-if="error">
-        <!-- Hollow dot, not the live pulse: nothing is connected, and an animated
-             dot would imply otherwise. -->
         <span class="size-1.5 flex-none rounded-full border border-muted" aria-hidden="true" />
         <span class="truncate">{{ error }}</span>
       </template>
-      <template v-else-if="sources">
-        <span class="size-1.5 flex-none rounded-full bg-accent animate-live" aria-hidden="true" />
-        <span class="truncate">{{ sources }}</span>
-        <!-- Never truncated, unlike the source list: a half-rendered honesty
-             marker is worse than none, so if anything has to give it is the
-             source names, which the greeting also states. -->
-        <span
-          v-if="mock"
-          class="flex-none border-l border-line pl-2 whitespace-nowrap tracking-[.14em]"
-          title="RUNCOACH_MOCK is set: answers are canned, not from your real data"
-        >
-          Mock data
-        </span>
-      </template>
+      <router-link v-else to="/connection" class="flex min-w-0 no-underline hover:text-ink">
+        <GarminChip :status="garmin" :mock="mock" />
+      </router-link>
     </div>
   </header>
 </template>

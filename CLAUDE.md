@@ -50,23 +50,57 @@ run-coach-ai/
 ```
 backend/
 ├── cmd/
-│   ├── server/       # HTTP API: /healthz, /sources, /chat, /chat/stream
-│   └── migrate/      # DB migration runner (needs DATABASE_URL)
+│   ├── server/         # HTTP API under /api plus the embedded UI
+│   ├── migrate/        # DB migration runner (needs DATABASE_URL)
+│   ├── hash-password/  # bcrypt hash for RUNCOACH_OWNER_PASSWORD_HASH
+│   └── token-key/      # a fresh RUNCOACH_TOKEN_KEY
 ├── internal/
 │   ├── config/       # env-based configuration (config.Load)
-│   ├── db/           # pgx pool + embedded migrations (rewritten from 000001 in Phase 7, ADR 0008)
+│   ├── db/           # pgx pool + embedded migrations (one fresh 000001, ADR 0008)
+│   ├── store/        # the ONLY data access: Store interface, Postgres and in-memory impls
+│   ├── auth/         # auth.Provider; OwnerPassword (bcrypt)
+│   ├── crypto/       # AES-256-GCM sealer for the token bundle
+│   ├── garmin/       # garmin.Source; LocalSpawn (bundle → GARMINTOKENS), probe, error classes
 │   ├── mcpclient/    # spawns garmin-mcp over stdio; ReadOnly() deny pattern; allowlisted child env
-│   ├── agent/        # Claude tool loop over N namespaced MCP sources; prompt; effort; caching
+│   ├── agent/        # Claude tool loop over N namespaced MCP sources; prompt; effort; caching; chart tool
+│   ├── chart/        # show_chart schema and validator
 │   ├── mockchat/     # canned scenarios for the five example questions (RUNCOACH_MOCK=1)
-│   └── api/          # HTTP handlers (Server struct), SSE writer, CORS
+│   ├── web/          # embed of frontend/dist (placeholder committed; Dockerfile fills it)
+│   └── api/          # routes, session middleware, login, chats, stream, token paste, health, SSE
 └── .env.example
 ```
 
+### Data, sessions and the shell (Phase 7)
+- **`internal/store` is the only data access** (ADR 0002). Every statement on a runner's
+  table names `runner_id`; a test scans `pg.go` for that and fails if SQL appears anywhere
+  else under `internal/`. Without `DATABASE_URL` the in-memory store is used (chats live until
+  restart); mock mode always uses it. Run the Postgres suite with
+  `RUNCOACH_TEST_DATABASE_URL=postgres://postgres@localhost:5432/runcoach_test?sslmode=disable`.
+- **Routes live under `/api`** behind a session cookie (`runcoach_session`, HttpOnly, Lax,
+  Secure behind TLS, 30 days). `POST /api/login` (rate-limited) → cookie; `GET /api/me` →
+  runner, Garmin state + fix sentence, today's usage, `mock`. Mock mode skips the cookie and
+  uses the owner. Handlers read the runner id from the context only; nothing checks "is this
+  the owner".
+- **Chats:** `GET/POST /api/chats`, `PATCH/DELETE /api/chats/{id}`, `GET …/messages`,
+  `POST /api/chats/{id}/stream`. The stream loads history server-side (last 6 completed pairs),
+  saves the question first, titles the chat from the first question, answers 429 at the daily
+  cap and 409 while a reply runs, writes `: keepalive` every 15 s, saves the reply with its
+  `tool_calls` and `chart`, and records the Garmin outcome on the connection row.
+  `POST /api/chat` is the stateless curl path.
+- **Token paste:** `POST /api/garmin/tokens {bundle}` normalises the base64 line
+  `garmin-mcp-auth` writes, probes it with `get_user_profile` through a real spawn, seals it
+  (AES-256-GCM, `RUNCOACH_TOKEN_KEY`) and upserts `garmin_connections`. `LocalSpawn` hands the
+  decrypted bundle to the child as `GARMINTOKENS`: python-garminconnect treats a store longer
+  than 512 characters as the token data itself, so no file is ever written.
+- **One origin** (ADR 0007): `internal/web` embeds `frontend/dist` (placeholder committed;
+  the Dockerfile copies the real build). Vite proxies `/api` in dev. CORS is off unless
+  `ALLOWED_ORIGIN` is set.
+
 ### MCP architecture (important)
-- **Garmin is the only source.** The backend spawns the upstream `garmin-mcp` for each reply
-  (`GARMIN_MCP_COMMAND`, a `docker run -i ...` in local dev; a plain binary in the hosted
-  image from Phase 8) and connects over stdio. Unset ⇒ no source; live requests answer 503
-  saying so. Mock mode still works.
+- **Garmin is the only source.** `garmin.Source` → `LocalSpawn` runs `GARMIN_MCP_COMMAND`
+  (default `garmin-mcp`; local dev points it at the Docker image) for each reply and connects
+  over stdio. With no stored bundle the command runs as configured, which is the named-volume
+  dev setup. Mock mode spawns nothing.
 - **The read surface is a deny pattern applied in Go** (`mcpclient.ReadOnly`, ADR 0004) to the
   live `tools/list`: `set_* add_* create_* delete_* upload_* …` and the nutrition, challenge,
   gear, course, workout, women's-health and device-admin groups are never offered to the
@@ -143,13 +177,16 @@ tokens live in `src/style.css` as Tailwind v4 `@theme` variables under the same 
 - **`prefers-reduced-motion` is a base-layer reset** in `src/style.css`.
 - **Agent replies get no bubble; only user messages do** (DESIGN.md §1.2).
 
-### How a question flows
-`Composer` → `useChat` → `lib/api.js` → `POST /chat/stream` → `step` events → `StatusSteps`,
-then the answer replaces the steps. `useChat` takes its transport as an argument. Answer text
-is parsed, not JSON (`lib/answer.js`: lede, paragraphs, at most one `[figure: …]` pull quote).
-Step labels live in `lib/stepLabels.js`, keyed by `garmin/<real tool name>`; unknown tools get
-a generic-but-honest line. The UI asks `GET /sources` what it is connected to and labels mock
-mode as such.
+### Shell and flow
+`vue-router` (`/login`, `/`, `/c/:id`, `/connection`); the guard loads `/me` once and sends a
+401 to `/login`. `App.vue` is the shell: `Sidebar` beside the page above the `wide:` breakpoint,
+a drawer behind the header's menu button below it. `useSession` (one shared `me`), `useChats`
+(the list), `useChat(transport, {loadMessages})` (one chat's thread; `open(id)` rebuilds it
+from saved messages; `send` streams; the server holds the history so nothing is replayed from
+the client). On `/` the first question creates a chat and the URL follows. `LoginPage` polls
+`/api/healthz` and shows the waking state until the host answers. `ConnectionPage` is the
+paste box. Answer text is parsed, not JSON (`lib/answer.js`); step labels in
+`lib/stepLabels.js`; the chart card in `ChartCard.vue` from `lib/chart.js`.
 
 ## Required env vars
 See `backend/.env.example`. Summary:
@@ -157,18 +194,20 @@ See `backend/.env.example`. Summary:
 |---|---|
 | `PORT` | HTTP port (default 8080) |
 | `DATABASE_URL` | Postgres connection string. **Optional** until Phase 7; unset ⇒ `/healthz` says `db: off` |
-| `GARMIN_MCP_COMMAND` | Command to launch garmin-mcp. **Unset ⇒ no source**; live requests answer 503 |
+| `GARMIN_MCP_COMMAND` | Command to launch garmin-mcp (default `garmin-mcp`; local dev: the Docker image). The stored bundle is passed as `GARMINTOKENS` |
+| `RUNCOACH_OWNER_PASSWORD_HASH` | bcrypt hash for the owner login (`cmd/hash-password`). Unset ⇒ nobody can log in |
+| `RUNCOACH_TOKEN_KEY` | base64 32-byte key sealing the stored bundle (`cmd/token-key`) |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | Read only by the one-off `garmin-mcp-auth` step via compose. The server never reads them and never passes them to the child |
 | `GARMIN_IS_CN` | `true` only for Garmin Connect China |
 | `ANTHROPIC_API_KEY` | Claude API access |
 | `ANTHROPIC_MODEL` | Coach model (default `claude-opus-5-5`) |
 | `ANTHROPIC_EFFORT` | `low` / `medium` / `high` (default `medium`) |
-| `ALLOWED_ORIGIN` | Browser origin allowed by CORS (default the Vite dev server). Empty disables CORS |
+| `ALLOWED_ORIGIN` | Browser origin allowed by CORS. Empty (default) disables CORS; the UI shares the API's origin |
 | `RUNCOACH_MOCK` | **Dev only.** `1`/`true`/`yes`/`on` ⇒ canned answers, no credentials, no database |
 
 ## Current phase
-Phases 5 (Garmin core) and 6 (charts) are built against mocks and tests. Next: Phase 7 shell
-(login, token paste, saved chats, sidebar), then Phase 8 deploy on free tiers and the live
+Phases 5 (Garmin core), 6 (charts) and 7 (shell: login, token paste, saved chats, sidebar, one
+origin) are built against mocks and tests. Next: Phase 8 deploy on free tiers and the live
 pass. Track in `tasks/todo.md`. Nothing has run against a live Garmin account yet; Phase 8 is
 where that happens. `npm run e2e` (browser walkthrough on mock mode) and `node e2e/shots.mjs`
 are the manual checks before merging UI changes.

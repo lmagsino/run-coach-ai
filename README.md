@@ -10,7 +10,7 @@ _by [Leo Magsino Jr](https://github.com/lmagsino)_
 ![Vue](https://img.shields.io/badge/Vue_3-Vite-4FC08D?logo=vuedotjs&logoColor=white)
 ![MCP](https://img.shields.io/badge/protocol-MCP-6E56CF)
 ![Claude](https://img.shields.io/badge/Claude-Opus_5.5-D97757?logo=anthropic&logoColor=white)
-![Phase 5](https://img.shields.io/badge/Phase_5-Garmin_core-2E5D4E)
+![Phase 7](https://img.shields.io/badge/Phases_5–7-built-2E5D4E)
 
 </div>
 
@@ -79,16 +79,16 @@ run-coach-ai/
 
 ## Getting started
 
-**Prerequisites:** Go 1.26+, Node 22+, an [Anthropic API key](https://console.anthropic.com). Docker only for the Garmin server.
+**Prerequisites:** Go 1.26+, Node 22+, an [Anthropic API key](https://console.anthropic.com). Docker only for the Garmin server. Postgres only once you want chats to survive a restart.
 
 Run the UI against canned answers first, with nothing else set up:
 
 ```bash
-cd backend && RUNCOACH_MOCK=1 go run ./cmd/server     # API on :8080, no credentials, no database
-cd frontend && npm install && npm run dev               # UI on :5173
+cd backend && RUNCOACH_MOCK=1 go run ./cmd/server     # API on :8080, no login, no credentials, no database
+cd frontend && npm install && npm run dev               # UI on :5173, proxies /api to :8080
 ```
 
-Then connect your own Garmin:
+Then run it for real, locally:
 
 ```bash
 cd deploy/garmin-mcp
@@ -96,12 +96,17 @@ docker compose build                                    # garmin_mcp at the pinn
 docker compose --profile auth run --rm garmin-mcp-auth  # interactive: email, password, MFA code, once
 
 cd ../../backend
-cp .env.example .env                                    # ANTHROPIC_API_KEY, uncomment GARMIN_MCP_COMMAND
+cp .env.example .env                                    # ANTHROPIC_API_KEY, GARMIN_MCP_COMMAND, and:
+go run ./cmd/token-key                                  #   RUNCOACH_TOKEN_KEY
+echo -n 'your password' | go run ./cmd/hash-password    #   RUNCOACH_OWNER_PASSWORD_HASH
 go run ./cmd/server
-curl -s localhost:8080/chat -d '{"question":"How did I sleep this week?"}'
 ```
 
-The auth step writes OAuth tokens (good for about six months) into a named volume the container reuses; no credential is needed per request. When they expire, run it again.
+Open the UI, sign in, and paste the token bundle from the laptop on the Connection page (`deploy/garmin-mcp/README.md` says where `garmin-mcp-auth` leaves it). The server checks it with one profile read, stores it encrypted, and hands it to each spawned `garmin-mcp`. When it expires, about six months later, the chip says so and you paste a new one.
+
+## Deploy, free
+
+`Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it); `render.yaml` describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and set `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_PASSWORD_HASH` and `RUNCOACH_TOKEN_KEY` in the dashboard. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
 
 > `garmin_mcp` drives Garmin Connect's private endpoints with a personal login. There is no public API behind it, so it can break when Garmin changes them; the coach then says "Garmin unavailable" rather than guessing.
 
@@ -121,12 +126,12 @@ RUNCOACH_LIVE_MODEL_TESTS=1 go test ./internal/agent/ -run LiveModel -v   # cost
 ## Status
 
 - [x] Phases 1–4: design, Go backend, Garmin wiring, Vue chat UI, all against mocks
-- [ ] **Phase 5, Garmin core**: Strava removed, database optional, pin bumped, read surface filtered in Go, Garmin-only prompt on Opus 5.5
-- [ ] Phase 6, charts
-- [ ] Phase 7, shell: owner login, token paste, saved chats, sidebar
-- [ ] Phase 8, deploy on free tiers and test live
+- [x] Phase 5, Garmin core: Strava removed, database optional, pin bumped, read surface filtered in Go, Garmin-only prompt on Opus 5.5
+- [x] Phase 6, charts: one validated chart card per reply
+- [x] Phase 7, shell: owner login, token paste, saved chats, sidebar and phone drawer, one origin
+- [ ] **Phase 8, deploy on free tiers and test live**: image and blueprint written; hosting, Garmin sign-in, the live pass and Playwright in CI remain
 
-Nothing has run against a live Garmin account yet. Phase 8 is where that happens, on purpose: the build phases need no account, and everything gets tested together once.
+Nothing has run against a live Garmin account yet. Phase 8 is where that happens, on purpose: the build phases need no account, and everything gets tested together once. Before merging UI changes, run `npm run e2e` (the browser walkthrough on mock mode).
 
 ## Design
 

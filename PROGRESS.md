@@ -150,11 +150,11 @@ hosting. Decisions: `docs/adr/`. Terms: `CONTEXT.md`. Design spec:
 checklist: `tasks/plan.md`, `tasks/todo.md`. Build first (5, 6, 7), deploy on free tiers and test
 live last (8). Issues #24–#29 are superseded.
 
-- [ ] **Phase 5 Garmin core** (`phase-5-garmin-core`): Strava removed, database optional, upstream
+- [x] **Phase 5 Garmin core** (`phase-5-garmin-core`): Strava removed, database optional, upstream
       pin `43b0c5b`, read surface filtered in Go, Garmin-only prompt on Opus 5.5
-- [ ] **Phase 6 Charts** (`phase-6-charts`): one chart card per reply via `coach__show_chart`,
+- [x] **Phase 6 Charts** (`phase-6-charts`): one chart card per reply via `coach__show_chart`,
       hand-rolled SVG, two mock scenarios
-- [ ] **Phase 7 Shell** (`phase-7-shell`): fresh migrations with `runner_id`, owner login, token
+- [x] **Phase 7 Shell** (`phase-7-shell`): fresh migrations with `runner_id`, owner login, token
       paste, saved chats, sidebar, phone drawer, one origin
 - [ ] **Phase 8 Deploy and test** (`phase-8-deploy`): one image on Render free + Neon free, Garmin
       auth and paste, live pass from the phone, Playwright smoke

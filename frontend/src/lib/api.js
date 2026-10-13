@@ -1,25 +1,63 @@
-// Client for the Go backend.
-//
-// The chat endpoint is SSE over POST rather than GET, so EventSource can't be
-// used (it only does GET) — we read the response body as a stream and parse the
-// frames. The tradeoff is worth it: the question stays in the request body
-// instead of a query string, and it keeps the same shape as POST /chat.
+// The HTTP client. Everything goes to /api on the same origin: the Go binary
+// serves the UI in production and Vite proxies /api in development (ADR 0007),
+// so the session cookie travels with every request and no CORS is involved.
 
-const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8080'
+const BASE = '/api'
 
-/**
- * What the backend is actually connected to.
- * @returns {Promise<{sources: string[], mock: boolean}>}
- */
-export async function fetchSources() {
-  const res = await fetch(`${BASE}/sources`)
-  if (!res.ok) throw new Error(`could not read backend sources (${res.status})`)
+// ApiError carries the status so the router can treat 401 as "sign in".
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message)
+    this.status = status
+  }
+}
+
+async function request(method, path, body) {
+  let res
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: 'same-origin',
+    })
+  } catch {
+    // fetch rejects with "Failed to fetch" for every transport-level problem;
+    // say the useful thing instead.
+    throw new ApiError('Can’t reach the coach. Is the backend running?', 0)
+  }
+  if (!res.ok) {
+    let detail = `request failed (${res.status})`
+    try {
+      const data = await res.json()
+      if (data?.error) detail = data.error
+    } catch {
+      // Non-JSON error body; keep the status-based message.
+    }
+    throw new ApiError(detail, res.status)
+  }
+  if (res.status === 204) return null
   return res.json()
+}
+
+export const api = {
+  health: () => request('GET', '/healthz'),
+  me: () => request('GET', '/me'),
+  login: (password) => request('POST', '/login', { password }),
+  logout: () => request('POST', '/logout', {}),
+  listChats: () => request('GET', '/chats').then((d) => d.chats ?? []),
+  createChat: () => request('POST', '/chats', {}),
+  renameChat: (id, title) => request('PATCH', `/chats/${id}`, { title }),
+  deleteChat: (id) => request('DELETE', `/chats/${id}`),
+  messages: (id) => request('GET', `/chats/${id}/messages`).then((d) => d.messages ?? []),
+  garminTokens: (bundle) => request('POST', '/garmin/tokens', { bundle }),
+  garminTokensDelete: () => request('DELETE', '/garmin/tokens'),
 }
 
 // Splits an SSE byte stream into {event, data} frames. Frames are separated by a
 // blank line and can straddle chunk boundaries, so the tail of an incomplete
-// frame has to be carried over rather than parsed early.
+// frame has to be carried over rather than parsed early. Comment lines (the
+// server's keepalive) carry no data and are skipped.
 async function* readEvents(response) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
@@ -54,33 +92,28 @@ async function* readEvents(response) {
 }
 
 /**
- * Asks a question and reports progress as it arrives.
+ * Asks a question in a saved chat and reports progress as it arrives. The
+ * server holds the chat's history, so only the question travels.
  *
- * The backend keeps no session state, so the completed exchanges travel with each
- * request — that is what lets a follow-up like "what about the week before that?"
- * resolve (spec §5).
- *
+ * @param {string} chatId
  * @param {string} question
- * @param {{onStep: Function, onChart?: Function, onAnswer: Function, history?: Array<{question: string, answer: string}>}} handlers
+ * @param {{onStep: Function, onChart?: Function, onAnswer: Function}} handlers
  */
-export async function streamChat(question, { onStep, onChart, onAnswer, history = [] }) {
+export async function streamChat(chatId, question, { onStep, onChart, onAnswer }) {
   let res
   try {
-    res = await fetch(`${BASE}/chat/stream`, {
+    res = await fetch(`${BASE}/chats/${chatId}/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, history }),
+      body: JSON.stringify({ question }),
+      credentials: 'same-origin',
     })
   } catch {
-    // fetch rejects with "Failed to fetch" for every transport-level problem —
-    // server down, DNS, CORS. Unhelpful verbatim, and it would be rendered in the
-    // agent's own voice in the thread, so say the useful thing instead.
-    throw new Error(`Can’t reach the coach — is the backend running on ${BASE}?`)
+    throw new ApiError('Can’t reach the coach. Is the backend running?', 0)
   }
 
-  // Failures before the stream opens are JSON with a status; the backend's
-  // messages are written for a person ("GARMIN_MCP_COMMAND is not set"),
-  // so prefer them over a generic string.
+  // Failures before the stream opens are JSON with a status: the cap (429), a
+  // reply already running (409), a missing chat (404), a lost session (401).
   if (!res.ok) {
     let detail = `request failed (${res.status})`
     try {
@@ -89,7 +122,7 @@ export async function streamChat(question, { onStep, onChart, onAnswer, history 
     } catch {
       // Non-JSON error body; keep the status-based message.
     }
-    throw new Error(detail)
+    throw new ApiError(detail, res.status)
   }
 
   for await (const { name, data } of readEvents(res)) {
@@ -103,7 +136,7 @@ export async function streamChat(question, { onStep, onChart, onAnswer, history 
     } else if (name === 'error') {
       // Errors arrive in-band once the stream is open, since the status code is
       // already committed.
-      throw new Error(data.error || 'the coach could not finish that answer')
+      throw new ApiError(data.error || 'the coach could not finish that answer', 0)
     }
   }
 }

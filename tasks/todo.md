@@ -18,17 +18,17 @@
 - [x] Checkpoint: both chart scenarios render at 1280/561/360; invalid drops (PR merge is Leo's)
 
 ## Phase 7: Shell (phase-7-shell)
-- [ ] 7.1 Fresh migrations and the scoped store
-- [ ] 7.2 Owner login and sessions
-- [ ] 7.3 `garmin.Source`, `LocalSpawn`, token crypto, token paste
-- [ ] 7.4 Saved chats, cap, in-flight guard
-- [ ] 7.5 Login and Connection screens
-- [ ] 7.6 Router, sidebar, chip, phone drawer
-- [ ] 7.7 One origin, keepalive, `/healthz`
-- [ ] Checkpoint: works locally with Postgres; mock mode needs none; PR merged
+- [x] 7.1 Fresh migrations and the scoped store
+- [x] 7.2 Owner login and sessions
+- [x] 7.3 `garmin.Source`, `LocalSpawn`, token crypto, token paste
+- [x] 7.4 Saved chats, cap, in-flight guard
+- [x] 7.5 Login and Connection screens
+- [x] 7.6 Router, sidebar, chip, phone drawer
+- [x] 7.7 One origin, keepalive, `/healthz`
+- [x] Checkpoint: store suite green on Postgres; shell walkthrough green in mock mode (PR merge is Leo's)
 
 ## Phase 8: Deploy (free) and test (phase-8-deploy)
-- [ ] 8.1 Dockerfile and `render.yaml`
+- [x] 8.1 Dockerfile and `render.yaml`
 - [ ] 8.2 Neon + Render set up (Leo)
 - [ ] 8.3 Garmin auth on the laptop, paste, live tool-diff test (Leo + code)
 - [ ] 8.4 Live pass from the phone, measured

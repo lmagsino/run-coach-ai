@@ -64,29 +64,29 @@ Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
 
 ## Phase 7: Shell
 
-- [ ] 7.1 Fresh `000001` migration: `runners` (owner seeded), `sessions`,
+- [x] 7.1 Fresh `000001` migration: `runners` (owner seeded), `sessions`,
       `garmin_connections`, `chat_sessions`, `chat_messages`, `usage`, `audit_log`, all
       with `runner_id`; `internal/store.Scoped` is the only data access, with a test that
       scans for stray `pool.Query` calls (ADR 0002, 0008).
-- [ ] 7.2 Auth: `auth.Provider` + `OwnerPassword` (bcrypt hash from
+- [x] 7.2 Auth: `auth.Provider` + `OwnerPassword` (bcrypt hash from
       `RUNCOACH_OWNER_PASSWORD_HASH`); cookie session (`HttpOnly; Secure; SameSite=Lax`,
       30 days); `POST /login`, `POST /logout`, `GET /me`; login rate-limited;
       `cmd/hash-password`; mock mode skips login.
-- [ ] 7.3 Garmin: `garmin.Source` + `LocalSpawn` (decrypt the bundle into a `0700` temp
+- [x] 7.3 Garmin: `garmin.Source` + `LocalSpawn` (decrypt the bundle into a `0700` temp
       dir, spawn with `GARMINTOKENS`, delete on close); `internal/crypto` AES-256-GCM
       under `RUNCOACH_TOKEN_KEY` with `key_version`; `POST /garmin/tokens` probes the
       pasted bundle with `get_user_profile` before storing; `DELETE /garmin/tokens`;
       status connected / expired / unavailable with a `fix` sentence on `/me` (ADR 0003).
-- [ ] 7.4 Chats: `GET/POST /chats`, `PATCH/DELETE /chats/:id`, `GET /chats/:id/messages`,
+- [x] 7.4 Chats: `GET/POST /chats`, `PATCH/DELETE /chats/:id`, `GET /chats/:id/messages`,
       `POST /chats/:id/stream` with history loaded server-side; 429 at the daily cap; 409
       while a reply is running; usage from the API's token counts; mock mode uses an
       in-memory store.
-- [ ] 7.5 Screens: `/login` with a "waking up" state while `/healthz` is unreachable;
+- [x] 7.5 Screens: `/login` with a "waking up" state while `/healthz` is unreachable;
       `/connection` with the chip state, the laptop commands and the paste box.
-- [ ] 7.6 Shell: `vue-router` (`/login`, `/`, `/c/:id`, `/connection`); sidebar by day
+- [x] 7.6 Shell: `vue-router` (`/login`, `/`, `/c/:id`, `/connection`); sidebar by day
       with new and delete, the Garmin chip and the usage line; drawer below the `wide:`
       breakpoint; thread, steps, composer reused.
-- [ ] 7.7 One origin: the Go binary serves `frontend/dist` through `embed.FS`, API under
+- [x] 7.7 One origin: the Go binary serves `frontend/dist` through `embed.FS`, API under
       `/api/`, CORS only when `ALLOWED_ORIGIN` is set; SSE `: keepalive` every 15 s;
       `/healthz` reports db and Garmin state with no secrets (ADR 0007).
 - [ ] Checkpoint: tests and CI green; login, paste (against the local Docker image), two
@@ -95,7 +95,7 @@ Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
 
 ## Phase 8: Deploy (free) and test
 
-- [ ] 8.1 Image: root `Dockerfile` (node build → go build with the dist embedded →
+- [x] 8.1 Image: root `Dockerfile` (node build → go build with the dist embedded →
       `python:3.12-slim` with `garmin-mcp` at the pin, non-root); `render.yaml` for one
       free web service with health check `/healthz`; migrations run on start under an
       advisory lock; `.dockerignore`.

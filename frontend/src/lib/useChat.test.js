@@ -1,15 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { useChat } from './useChat.js'
-
-// The history builder is the whole of the conversation's memory — the server keeps
-// no session state. A bug here degrades follow-ups silently: nothing throws, the
-// model just loses the thread. Hence the coverage.
 
 // A transport that records what it was handed and answers immediately.
 function recordingTransport(answer = 'An answer.', chart = null) {
   const calls = []
-  const transport = async (question, { onStep, onChart, onAnswer, history }) => {
-    calls.push({ question, history })
+  const transport = async (chatId, question, { onStep, onChart, onAnswer }) => {
+    calls.push({ chatId, question })
     if (chart) onChart(chart)
     onStep({ key: 'garmin/get_sleep_data', source: 'garmin', tool: 'get_sleep_data', state: 'active' })
     onStep({ key: 'garmin/get_sleep_data', source: 'garmin', tool: 'get_sleep_data', state: 'done' })
@@ -18,195 +14,71 @@ function recordingTransport(answer = 'An answer.', chart = null) {
   return { transport, calls }
 }
 
-describe('history', () => {
-  it('sends nothing on the first question', async () => {
-    const { transport, calls } = recordingTransport()
-    const { send } = useChat(transport)
-    await send('first question')
-    expect(calls[0].history).toEqual([])
+async function opened(transport, options) {
+  const chat = useChat(transport, options)
+  await chat.open('chat-1')
+  return chat
+}
+
+describe('sending', () => {
+  it('appends a user turn and a completed agent turn', async () => {
+    const { transport, calls } = recordingTransport('Yes, clearly.\n\nFour short nights, four slow runs.')
+    const { turns, send } = await opened(transport)
+    await send('does sleep matter?')
+    expect(calls).toEqual([{ chatId: 'chat-1', question: 'does sleep matter?' }])
+    expect(turns.value).toHaveLength(2)
+    expect(turns.value[0]).toMatchObject({ role: 'user', text: 'does sleep matter?' })
+    expect(turns.value[1]).toMatchObject({ role: 'agent', status: 'complete' })
+    expect(turns.value[1].answerText).toMatch(/^Yes, clearly\./)
+    expect(turns.value[1].blocks[0]).toMatchObject({ type: 'lede', text: 'Yes, clearly.' })
   })
 
-  it('sends completed exchanges, oldest first, on a follow-up', async () => {
-    const { transport, calls } = recordingTransport('The answer.')
+  it('refuses to send without an open chat', async () => {
+    const { transport, calls } = recordingTransport()
     const { send } = useChat(transport)
-    await send('q1')
-    await send('q2')
-    await send('q3')
+    await send('q')
+    expect(calls).toHaveLength(0)
+  })
 
-    expect(calls[2].history).toEqual([
-      { question: 'q1', answer: 'The answer.' },
-      { question: 'q2', answer: 'The answer.' },
+  it('labels steps from the source and tool and flips state in place', async () => {
+    const { transport } = recordingTransport()
+    const { turns, send } = await opened(transport)
+    await send('q')
+    expect(turns.value[1].steps).toEqual([
+      { id: 'garmin/get_sleep_data', label: 'Checking your Garmin sleep', state: 'done' },
     ])
   })
 
-  it('excludes the in-flight turn — the model would see the question twice', async () => {
-    const { transport, calls } = recordingTransport()
-    const { send } = useChat(transport)
-    await send('q1')
-    await send('q2')
-    expect(calls[1].history.map((h) => h.question)).not.toContain('q2')
-    expect(calls[1].question).toBe('q2')
-  })
-
-  it('replays the raw answer text, marker included', async () => {
-    // The parsed blocks drop the figure marker, so history must come from the raw
-    // text or the replayed answer would differ from what was actually given.
-    const raw = 'Lede.\n\n[figure: 6:44 | avg pace]\n\nClosing.'
-    const { transport, calls } = recordingTransport(raw)
-    const { send } = useChat(transport)
-    await send('q1')
-    await send('q2')
-    expect(calls[1].history[0].answer).toBe(raw)
-  })
-
-  it('leaves a failed turn with no answer text, which is what excludes it', async () => {
-    const { turns, send } = useChat(async () => {
-      throw new Error('backend down')
-    })
-    await send('doomed question')
-
-    expect(turns.value[1].status).toBe('error')
-    expect(turns.value[1].answerText).toBe('')
-  })
-
-  it('omits failed exchanges from a later question’s history', async () => {
-    let shouldFail = true
-    const calls = []
-    const transport = async (question, { onAnswer, history }) => {
-      calls.push({ question, history })
-      if (shouldFail) throw new Error('backend down')
-      onAnswer('recovered answer')
-    }
-    const { send } = useChat(transport)
-    await send('failed question')
-    shouldFail = false
-    await send('working question')
-    await send('third question')
-
-    const questions = calls[2].history.map((h) => h.question)
-    expect(questions).toEqual(['working question'])
-    expect(questions).not.toContain('failed question')
-  })
-})
-
-describe('turns', () => {
-  it('appends a user turn then an agent turn', async () => {
-    const { transport } = recordingTransport()
-    const { turns, send } = useChat(transport)
-    await send('how far did I run?')
-
-    expect(turns.value).toHaveLength(2)
-    expect(turns.value[0]).toMatchObject({ role: 'user', text: 'how far did I run?' })
-    expect(turns.value[1]).toMatchObject({ role: 'agent', status: 'complete' })
-  })
-
-  it('parses the answer into blocks', async () => {
-    const { transport } = recordingTransport('Lede.\n\n[figure: 6:44 | avg pace]\n\nClosing.')
-    const { turns, send } = useChat(transport)
-    await send('q')
-    expect(turns.value[1].blocks.map((b) => b.type)).toEqual(['lede', 'figure', 'p'])
-  })
-
-  it('flips a step in place instead of appending a duplicate', async () => {
-    const { transport } = recordingTransport()
-    const { turns, send } = useChat(transport)
-    await send('q')
-    // The transport sends active then done for the same key.
-    expect(turns.value[1].steps).toHaveLength(1)
-    expect(turns.value[1].steps[0].state).toBe('done')
-  })
-
-  it('labels steps from the source and tool', async () => {
-    const { transport } = recordingTransport()
-    const { turns, send } = useChat(transport)
-    await send('q')
-    expect(turns.value[1].steps[0].label).toBe('Checking your Garmin sleep')
-  })
-})
-
-describe('failure handling', () => {
-  it('surfaces the transport error on the turn', async () => {
-    const { turns, send } = useChat(async () => {
-      throw new Error('Can’t reach the coach')
-    })
-    await send('q')
-    expect(turns.value[1].status).toBe('error')
-    expect(turns.value[1].error).toBe('Can’t reach the coach')
-  })
-
-  it('does not leave steps pulsing when a transport ends without answering', async () => {
-    // Otherwise the UI reads as "still working" when nothing is.
-    const { turns, send } = useChat(async (_q, { onStep }) => {
-      onStep({ key: 'garmin/get_sleep_data', source: 'garmin', tool: 'get_sleep_data', state: 'active' })
-    })
-    await send('q')
-    expect(turns.value[1].status).toBe('error')
-    expect(turns.value[1].error).toMatch(/without an answer/i)
-  })
-
-  it('always says something, even for an error with no message', async () => {
-    const { turns, send } = useChat(async () => {
-      throw new Error('')
-    })
-    await send('q')
-    expect(turns.value[1].error).toBeTruthy()
-  })
-})
-
-describe('busy', () => {
-  it('is true while in flight and false afterwards', async () => {
+  it('is busy while a reply is in flight and ignores a second send', async () => {
     let release
-    const gate = new Promise((r) => (release = r))
-    const { busy, send } = useChat(async (_q, { onAnswer }) => {
-      await gate
-      onAnswer('done')
-    })
-
-    const pending = send('q')
+    const transport = (id, q, { onAnswer }) =>
+      new Promise((resolve) => {
+        release = () => {
+          onAnswer('done')
+          resolve()
+        }
+      })
+    const { busy, send, turns } = await opened(transport)
+    const first = send('one')
     expect(busy.value).toBe(true)
-    release()
-    await pending
-    expect(busy.value).toBe(false)
-  })
-
-  it('ignores a second question while one is in flight', async () => {
-    // Two concurrent answers in one thread would interleave with no way to tell
-    // which steps belong to which.
-    let release
-    const gate = new Promise((r) => (release = r))
-    const seen = []
-    const { turns, send } = useChat(async (question, { onAnswer }) => {
-      seen.push(question)
-      await gate
-      onAnswer('done')
-    })
-
-    const first = send('first')
-    await send('second while busy')
-    expect(seen).toEqual(['first'])
+    await send('two')
     expect(turns.value).toHaveLength(2)
-
     release()
     await first
-  })
-
-  it('is false again after a failure, so the composer recovers', async () => {
-    const { busy, send } = useChat(async () => {
-      throw new Error('nope')
-    })
-    await send('q')
     expect(busy.value).toBe(false)
   })
+})
 
+describe('charts', () => {
   it('holds the chart on the turn and keeps the turn working until the answer', async () => {
     const chart = { kind: 'bar', title: 'Weekly km' }
     let seenWhileWorking
-    const transport = async (q, { onChart, onAnswer }) => {
+    const transport = async (id, q, { onChart, onAnswer }) => {
       onChart(chart)
       seenWhileWorking = { chart: turns.value[1].chart, status: turns.value[1].status }
       onAnswer('Prose.')
     }
-    const { turns, send } = useChat(transport)
+    const { turns, send } = await opened(transport)
     await send('q')
     // ADR 0009: the card never renders before its prose, so the turn stays
     // "working" (steps shown) even though the chart has already arrived.
@@ -217,8 +89,66 @@ describe('busy', () => {
 
   it('leaves chart null when the transport sends none', async () => {
     const { transport } = recordingTransport()
-    const { turns, send } = useChat(transport)
+    const { turns, send } = await opened(transport)
     await send('q')
     expect(turns.value[1].chart).toBeNull()
+  })
+})
+
+describe('failures', () => {
+  it('turns a thrown transport error into an error turn with its message', async () => {
+    const transport = async () => {
+      throw new Error('daily cap reached; it resets at midnight UTC')
+    }
+    const { turns, send, busy } = await opened(transport)
+    await send('q')
+    expect(turns.value[1]).toMatchObject({ status: 'error', error: 'daily cap reached; it resets at midnight UTC' })
+    expect(busy.value).toBe(false)
+  })
+
+  it('marks a transport that ends without an answer as an error', async () => {
+    const { turns, send } = await opened(async () => {})
+    await send('q')
+    expect(turns.value[1].status).toBe('error')
+    expect(turns.value[1].error).toMatch(/without an answer/)
+  })
+})
+
+describe('opening a saved chat', () => {
+  it('rebuilds the thread from the stored messages, charts included', async () => {
+    const loadMessages = async () => [
+      { role: 'user', content: 'How did I sleep?' },
+      { role: 'assistant', content: 'Badly.\n\nFour short nights.', chart: { kind: 'bar' } },
+    ]
+    const { turns } = await opened(recordingTransport().transport, { loadMessages })
+    expect(turns.value).toHaveLength(2)
+    expect(turns.value[1]).toMatchObject({ role: 'agent', status: 'complete', chart: { kind: 'bar' } })
+    expect(turns.value[1].blocks[0].text).toBe('Badly.')
+  })
+
+  it('ignores a second open of the chat already open', async () => {
+    let loads = 0
+    const loadMessages = async () => {
+      loads++
+      return []
+    }
+    const chat = useChat(recordingTransport().transport, { loadMessages })
+    await chat.open('a')
+    await chat.send('q')
+    await chat.open('a')
+    expect(loads).toBe(1)
+    expect(chat.turns.value).toHaveLength(2)
+  })
+
+  it('keeps only the newest open when chats switch while loading', async () => {
+    const resolvers = {}
+    const loadMessages = (id) => new Promise((resolve) => (resolvers[id] = resolve))
+    const chat = useChat(recordingTransport().transport, { loadMessages })
+    const a = chat.open('a')
+    const b = chat.open('b')
+    resolvers.b([{ role: 'user', content: 'from b' }])
+    resolvers.a([{ role: 'user', content: 'from a' }])
+    await Promise.all([a, b])
+    expect(chat.turns.value.map((t) => t.text)).toEqual(['from b'])
   })
 })
