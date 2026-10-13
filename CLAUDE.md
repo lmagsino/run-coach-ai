@@ -2,6 +2,22 @@
 
 Context for AI coding sessions. Read this first.
 
+## Planning artefacts (read before changing anything)
+
+Re-planned 13 Oct 2026 as a Garmin-only personal MVP. Each stage of the plan writes one
+artefact and the next stage reads it rather than re-deriving it:
+
+| Stage | Where |
+|---|---|
+| Decisions | `docs/adr/0001`–`0009` (why Strava is gone, why the server never signs in to Garmin, why charts are a tool, hosting, migrations) |
+| Terms | `CONTEXT.md` (runner, owner, token bundle, read surface, deny pattern, live pass, …) |
+| Design | `docs/superpowers/specs/2026-10-13-garmin-mcp-upgrade-and-charts-design.md` and the artifact linked at its top |
+| Plan | `tasks/plan.md` (index, risks), `tasks/todo.md` (ordered checklist), `tasks/phase-5.md`, `phase-6.md`, `phase-7a.md`, `phase-7b.md` (tasks with acceptance criteria and `Blocked by` edges) |
+| Reviews | `.factory/matrix.md` (which paths are shared or registries) |
+
+The sections below describe the code as it is today (Phases 1–4, Strava and Garmin). Phase 5
+rewrites them; until then, where this file and the ADRs disagree, the ADRs win.
+
 ## What this is
 A chat-first AI running coach that reasons across **Strava** and **Garmin** data (connected via MCP) to answer questions neither app can answer alone. Chat *is* the product — no dashboards in v1. See `running-agent-feature-spec.md` for the full spec and `DESIGN.md` for the Phase 1 UI direction ("Field Notes").
 
