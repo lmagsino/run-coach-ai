@@ -11,7 +11,7 @@ The visual + UX reference for the chat UI. Locked in Phase 1 (Design); implement
 1. **Restraint reads as expensive.** One accent color, doing all the work. No gradients, no second accent, no decorative flourish. When unsure, remove.
 2. **Prose over chrome.** The assistant answers in plain flowing text. Only the *user's* messages get a container. This is what makes it feel like reading, not messaging.
 3. **Less data, well placed.** Never a stat table. Weave numbers into the sentence; promote at most **one** figure per answer to the pull-quote treatment.
-4. **The multi-source nature shows through words, not loud colors.** "Garmin sleep", "Strava load" in the copy and status lines — no Strava-orange / Garmin-blue branding in v1.
+4. **The data source shows through words, not loud colors.** "Garmin sleep", "Garmin load" in the copy and status lines — no Garmin-blue / Garmin-blue branding in v1.
 5. **Grounded, or silent.** Copy references what the tools actually found. No generic training advice filler.
 
 ---
@@ -68,7 +68,7 @@ The visual + UX reference for the chat UI. Locked in Phase 1 (Design); implement
 
 - **Full-height app shell:** fixed `header` → scrollable `main` → fixed `footer` (composer). Flex column, `height: 100%`.
 - **Reading measure:** `--measure: 660px`. The thread and composer are centered within this max-width. Header spans full width with its own padding.
-- **Header:** brand left (wordmark + "Field Notes" tag), connection status right ("● Strava & Garmin" with live pulse). `padding: 18px 28px`, bottom hairline.
+- **Header:** brand left (wordmark + "Field Notes" tag), connection status right ("● Garmin" with live pulse). `padding: 18px 28px`, bottom hairline.
 - **Thread:** vertical flex, `gap: 40px` between turns. `main` padding `44px 28px 30px`.
 - **Composer:** floating rounded field pinned in footer, `padding: 14px 28px 26px` on footer. Centered hint line beneath.
 - **Responsive:** at ≤560px, reduce paddings (`main` → `30px 18px 22px`, header → `15px 18px`), figure number → 28px, answer body → 15px. Body never scrolls horizontally.
@@ -96,10 +96,10 @@ Full width, no bubble. Structure:
 ### Status / thinking indicator (the demo signature)
 A vertical list of steps, `gap: 11px`, replacing the answer body while the agent works. Three states:
 - **`done`** — green check icon + muted text. e.g. "Checked your Garmin sleep & HRV".
-- **`active`** — pulsing accent dot (`@keyframes pulse`, 1.3s) + ink text. e.g. "Reading Strava training load…".
+- **`active`** — pulsing accent dot (`@keyframes pulse`, 1.3s) + ink text. e.g. "Reading your Garmin training load…".
 - **`pending`** — hollow muted dot, `opacity: .45` + muted text. e.g. "Comparing against your last block".
 
-Steps are short, first-person-adjacent, and **name the source** ("Garmin sleep", "Strava load"). This is what makes the multi-source reasoning visible. On completion, the whole status block is replaced by the answer.
+Steps are short, first-person-adjacent, and **name the source** ("Garmin sleep", "Garmin load"). This is what makes the coach's work visible. On completion, the whole status block is replaced by the answer.
 
 ### Composer
 - `paper-hi` background, `1px line` border, `border-radius: 18px`, padding `12px 12px 12px 18px`.

@@ -22,15 +22,15 @@ import { chromium } from 'playwright'
 const APP = process.env.E2E_URL ?? 'http://localhost:5173/'
 const SHOTS = process.env.E2E_SHOTS ?? null // set to a directory to save screenshots
 
-// The five example interactions from running-agent-feature-spec.md §4. Their
-// source plans deliberately differ (Garmin-only, Strava-only, both), so the
-// status UI is exercised across every plan rather than just the two-source case.
+// The five example questions from the design spec. Their tool plans differ
+// (two, three and four Garmin tools), so the status UI is exercised across
+// several shapes rather than one.
 const SPEC_QUESTIONS = [
   'Does my sleep actually affect my pace? Show me the pattern.',
   'Am I overtraining right now?',
-  'How did my last 3 marathon training blocks compare?',
-  "I have a half marathon in 10 weeks — am I on track, factoring in how recovered I've been?",
-  "My watch and Strava show different HR for yesterday's run — which is right?",
+  'How did my last three training blocks compare?',
+  "I have a half marathon in 10 weeks. Am I on track, given how recovered I've been?",
+  'Why has my body battery been so low this week?',
 ]
 
 const problems = []
@@ -84,7 +84,7 @@ async function ask(question) {
 // ---------------------------------------------------------------- header
 const header = await page.locator('header').innerText()
 console.log('header:', header.replace(/\n/g, ' | '))
-if (!/strava/i.test(header)) fail('header does not name any connected source')
+if (!/garmin/i.test(header)) fail('header does not name the connected source')
 
 // ------------------------------------------------- the five spec questions
 for (const question of SPEC_QUESTIONS) {

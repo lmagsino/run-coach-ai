@@ -1,11 +1,11 @@
 <script setup>
 // DESIGN.md §4 header + §5 connection indicator: wordmark and "Field Notes" tag
-// on the left, dual-source connection signal on the right. The connection is
-// words, not brand colours — DESIGN.md §1.4 rules out Strava-orange and
-// Garmin-blue for v1, so a single accent dot carries it instead.
+// on the left, connection signal on the right. The connection is words, not
+// brand colours — DESIGN.md §1.4 rules out Garmin-blue, so a single accent dot
+// carries it instead.
 defineProps({
-  // Human-readable source list from the backend, e.g. "Strava & Garmin". Empty
-  // while the probe is in flight.
+  // Human-readable source list from the backend, e.g. "Garmin". Empty while
+  // the probe is in flight.
   sources: { type: String, default: '' },
   // Answers are canned. Saying so is the honest counterpart to DESIGN.md §1.5's
   // "grounded, or silent" — the alternative is presenting fabricated training

@@ -1,3 +1,8 @@
+> **Superseded on 13 Oct 2026.** This is the original two-source (Strava + Garmin) feature spec,
+> kept for history. The product is now Garmin only, personal first: see
+> `docs/superpowers/specs/2026-10-13-garmin-mcp-upgrade-and-charts-design.md`, the ADRs in
+> `docs/adr/` (0001 explains why Strava went) and the plan in `tasks/plan.md`.
+
 # RunCoach AI — Feature Spec (Chat-First)
 
 ## 1. Overview

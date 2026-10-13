@@ -11,7 +11,7 @@ const { turns, busy, send } = useChat(streamChat)
 
 // What the backend is actually connected to. Garmin is config-gated, so this is
 // asked rather than assumed: claiming a Garmin connection that isn't there would
-// promise recovery data the agent cannot fetch.
+// promise data the coach cannot fetch.
 const sources = ref([])
 const mock = ref(false)
 const connectionError = ref('')
@@ -28,31 +28,21 @@ onMounted(async () => {
   }
 })
 
-const SOURCE_NAMES = { strava: 'Strava', garmin: 'Garmin' }
+const SOURCE_NAMES = { garmin: 'Garmin' }
 const sourceList = computed(() =>
   sources.value.map((s) => SOURCE_NAMES[s] ?? s).join(' & '),
 )
 
-// The greeting describes only the sources that exist. With Garmin off it must not
-// offer sleep or HRV, because nothing could answer.
+// The greeting describes only what exists. With Garmin off there is nothing
+// the coach could answer, so it says so rather than inviting a question.
 const greeting = computed(() => {
-  const has = (name) => sources.value.includes(name)
-  if (has('strava') && has('garmin')) {
+  if (sources.value.includes('garmin')) {
     return (
-      'I can see your Strava training and your Garmin sleep, HRV and recovery at ' +
-      'the same time. Ask me something neither app could answer alone.'
+      'I can see your Garmin activities, sleep, HRV, stress, body battery and training ' +
+      'load. Ask me about your training or your recovery, or both at once.'
     )
   }
-  if (has('garmin')) {
-    return 'I can see your Garmin sleep, HRV, stress and training load. Ask me about your recovery.'
-  }
-  if (has('strava')) {
-    return (
-      'I can see your Strava training log — distances, paces and heart rate per run. ' +
-      'Garmin recovery data is not connected, so I can’t speak to sleep or HRV yet.'
-    )
-  }
-  return ''
+  return 'Garmin is not connected yet, so there is nothing I can read. Connect it and ask again.'
 })
 </script>
 

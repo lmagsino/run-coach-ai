@@ -73,7 +73,7 @@ function submit() {
       Mock mode — answers are canned, not from your data
     </template>
     <template v-else>
-      Grounded in your real Strava &amp; Garmin data — never generic advice
+      Grounded in your real Garmin data — never generic advice
     </template>
   </p>
 </template>

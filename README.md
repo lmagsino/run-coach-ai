@@ -2,16 +2,15 @@
 
 # 🏃 RunCoach AI
 
-**A chat-first AI running coach that reasons across your Strava _and_ Garmin data — answering questions neither app can answer alone.**
+**A chat over your own Garmin data. Ask in plain words; the coach reads your activities, sleep, HRV, stress and training load through MCP and answers in grounded prose, with one chart when a pattern is the point.**
 
 _by [Leo Magsino Jr](https://github.com/lmagsino)_
 
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
-![Postgres](https://img.shields.io/badge/Postgres-15-4169E1?logo=postgresql&logoColor=white)
+![Vue](https://img.shields.io/badge/Vue_3-Vite-4FC08D?logo=vuedotjs&logoColor=white)
 ![MCP](https://img.shields.io/badge/protocol-MCP-6E56CF)
-![Claude](https://img.shields.io/badge/Claude-Sonnet-D97757?logo=anthropic&logoColor=white)
-![Vue](https://img.shields.io/badge/Vue_3-planned-4FC08D?logo=vuedotjs&logoColor=white)
-![Phase 3](https://img.shields.io/badge/Phase_3-both_sources_wired-2E5D4E)
+![Claude](https://img.shields.io/badge/Claude-Opus_5.5-D97757?logo=anthropic&logoColor=white)
+![Phase 5](https://img.shields.io/badge/Phase_5-Garmin_core-2E5D4E)
 
 </div>
 
@@ -19,155 +18,130 @@ _by [Leo Magsino Jr](https://github.com/lmagsino)_
 
 ## The idea
 
-Strava and Garmin don't share data with each other — but an agent can hold both at once. RunCoach AI connects to each source over the **Model Context Protocol (MCP)**, then reasons across the combined result to answer natural-language training questions:
+A Garmin watch records far more than the Garmin app lets you ask about. RunCoach AI connects to the upstream [`Taxuspt/garmin_mcp`](https://github.com/Taxuspt/garmin_mcp) server over the **Model Context Protocol**, hands Claude about eighty read-only tools, and lets you ask:
 
-> _"Does my sleep actually affect my pace?"_ · _"Am I overtraining right now?"_ · _"I have a half marathon in 10 weeks — am I on track, factoring in how recovered I've been?"_
+> _"Does my sleep actually affect my pace? Show me the pattern."_ · _"Am I overtraining right now?"_ · _"How did my last three training blocks compare?"_ · _"I have a half marathon in 10 weeks. Am I on track, given how recovered I've been?"_ · _"Why has my body battery been so low this week?"_
 
-No dashboards, no cards, no widgets. **The chat interaction _is_ the product.**
+Every reply is grounded in what the tools returned. No generic training advice, no dashboards. **The chat is the product.**
 
-## Why it's different
-
-| Capability | Strava alone | Garmin alone | RunCoach AI |
-|---|:---:|:---:|:---:|
-| Sleep/HRV vs. pace correlation | ❌ | ❌ | ✅ combines both |
-| Overtraining detection (load + effort variability) | ❌ | ⚠️ partial | ✅ full picture |
-| Free-form Q&A over your history | ❌ | ❌ | ✅ core interaction |
-| Reconciling conflicting data (same run, different HR) | ❌ | ❌ | ✅ |
-| Readiness-adjusted race planning | ⚠️ | ⚠️ | ✅ both signals |
+It is built for one runner (me) first, with every table and interface shaped so a second runner is additive later. The decisions are recorded in [`docs/adr/`](docs/adr/), the terms in [`CONTEXT.md`](CONTEXT.md), the plan in [`tasks/plan.md`](tasks/plan.md).
 
 ## Architecture
 
-The Go backend is a pure **MCP client**. Each data source is a **self-hosted MCP server** it connects to — keeping the whole system free, local, and fully under our control.
+The Go backend is a pure **MCP client**. For each reply it spawns the upstream Garmin server as a subprocess, filters its tool list down to the read-only surface, and runs Claude's tool loop over it. The Vue 3 frontend streams the steps and the reply.
 
 ```mermaid
 flowchart LR
-    User([Runner]) -->|chat| Vue["Vue 3 UI<br/><i>Phase 4</i>"]
-    Vue -->|HTTP| Go["Go backend<br/>MCP client + agent loop"]
-    Go <-->|"Messages API<br/>+ tool use"| Claude["Claude (Sonnet)"]
-    Go -->|"stdio (MCP)"| SMCP["strava-mcp<br/><i>self-hosted, ours</i>"]
-    Go -->|"stdio (MCP)"| GMCP["garmin_mcp<br/><i>self-hosted container</i>"]
-    SMCP -->|REST| Strava[("Strava API")]
-    GMCP -.->|"Phase 5"| Garmin[("Garmin Connect")]
+    Leo([Leo, laptop or phone]) -->|chat| Vue["Vue 3 UI<br/>steps · reply · chart card"]
+    Vue -->|SSE| Go["Go backend<br/>MCP client + agent loop"]
+    Go <-->|"Messages API<br/>tool use · cached tool block"| Claude["Claude Opus 5.5"]
+    Go -->|"stdio MCP per reply<br/>read surface only"| GMCP["garmin-mcp<br/><i>upstream, pinned</i>"]
+    GMCP --> Garmin[("Garmin Connect")]
+    Laptop([Laptop, every ~6 months]) -. "garmin-mcp-auth" .-> GMCP
 ```
 
-When a question arrives, Claude decides which tools to call — Strava only, Garmin only, or **both** — the backend routes each call to the server that owns it, and Claude answers **grounded only in what the tools returned**, no generic training-advice filler. Every answer reports which sources it actually drew on.
+Three things are deliberate and recorded as ADRs:
 
-Both servers expose an activities listing, so tools are namespaced per source (`strava__get_activities`, `garmin__get_sleep_data`). Without that, a routing slip would silently answer a Strava question with Garmin data — wrong numbers, no error.
-
-> **Design note:** the spec originally called for Strava's _hosted_ MCP (`mcp.strava.com`). It turned out to require a paid Strava subscription and is gated to Claude's first-party connector — so we run our **own** thin Strava MCP server over Strava's free REST API instead. Same MCP story, no external gatekeeping.
+- **The hosted server never signs in to Garmin** ([ADR 0003](docs/adr/0003-hosted-server-never-signs-in-to-garmin.md)). The sign-in (email, password, MFA) happens once on the laptop with upstream's `garmin-mcp-auth`; the server only uses the resulting tokens, and the spawned process gets an allowlisted environment so it cannot sign in even if asked.
+- **The read surface is a deny pattern in Go, not an allowlist** ([ADR 0004](docs/adr/0004-upstream-garmin-mcp-unmodified-read-surface-filtered-in-go.md)). Upstream has 155 tools; writes, deletes, uploads and the groups a coach has no use for are denied by name shape, applied to the live tool list. 77 tools remain at the pinned commit.
+- **Charts are a tool the model calls and the backend validates** ([ADR 0005](docs/adr/0005-charts-are-a-virtual-tool-validated-by-the-backend.md)), drawn by hand in SVG. Phase 6.
 
 ## Tech stack
 
 | Layer | Choice |
 |---|---|
-| Backend | **Go 1.26** — stdlib `net/http`, `pgx/v5`, `golang-migrate` |
-| Agent | **Claude (Sonnet)** via the Anthropic Go SDK, tool-calling loop |
+| Backend | **Go 1.26**, stdlib `net/http`, `pgx/v5`, `golang-migrate` |
+| Agent | **Claude Opus 5.5** via the Anthropic Go SDK: tool loop, explicit effort, prompt caching on the system prompt and tool block |
 | Protocol | **MCP** via the official `modelcontextprotocol/go-sdk` |
-| Database | **Postgres** — chat sessions/messages + normalized activity cache |
-| Garmin | **`Taxuspt/garmin_mcp`** in a container, installed from git at a pinned commit |
-| Auth | **Strava OAuth2** (per-user), tokens stored + auto-refreshed · **Garmin** email/password + MFA, authenticated once into a token volume |
-| Frontend | **Vue 3 + Tailwind** _(Phase 4)_ |
-| Hosting | **Local-only** for v1 — no infra to manage |
+| Garmin | **`Taxuspt/garmin_mcp`** installed from git at a pinned commit, spawned per reply |
+| Frontend | **Vue 3 + Vite + Tailwind v4**, the "Field Notes" design in [`DESIGN.md`](DESIGN.md) |
+| Database | **Postgres**, optional until chats are persisted (Phase 7) |
+| Hosting | **Free tiers only** (Phase 8): one Render free web service plus Neon free Postgres |
 
 ## Repository layout
 
 ```
 run-coach-ai/
-├── DESIGN.md, design/                 # Phase 1 — "Field Notes" UI direction
-├── running-agent-feature-spec.md      # Full feature spec
-├── PROGRESS.md                        # Cross-session task tracker
-├── CLAUDE.md                          # Contributor / agent guide
-├── deploy/garmin-mcp/                 # Garmin MCP container (Phase 3)
-│   ├── Dockerfile                     # garmin_mcp at a pinned upstream commit
-│   └── docker-compose.yml             # image build + one-time interactive auth
-└── backend/                           # Go API (Phase 2)
-    ├── cmd/
-    │   ├── server/       # HTTP API: /healthz, /auth/strava/*, /chat
-    │   ├── migrate/      # DB migration runner
-    │   ├── strava-mcp/   # self-hosted Strava MCP server (stdio)
-    │   └── strava-check/ # CLI: proves list_activities over MCP
-    └── internal/
-        ├── config/  db/  strava/  api/
-        ├── mcpclient/    # spawns strava-mcp / garmin_mcp over stdio
-        └── agent/        # Claude tool-loop over N namespaced MCP sources
+├── docs/adr/                          # the decisions, 0001–0009
+├── CONTEXT.md                         # the glossary
+├── tasks/plan.md, tasks/todo.md       # the plan, phases 5–8
+├── DESIGN.md, design/                 # "Field Notes" UI direction
+├── deploy/garmin-mcp/                 # upstream garmin_mcp image + one-off auth; tools.txt
+├── backend/                           # Go API
+│   ├── cmd/server, cmd/migrate
+│   └── internal/
+│       ├── agent/        # Claude tool loop over namespaced MCP sources
+│       ├── mcpclient/    # spawns garmin-mcp; ReadOnly() deny pattern; allowlisted child env
+│       ├── api/          # /healthz, /sources, /chat, /chat/stream (SSE)
+│       └── mockchat/     # canned scenarios for the five questions
+└── frontend/                          # Vue 3 app
 ```
 
 ## Getting started
 
-**Prerequisites:** Go 1.26+, Postgres 15+, a [Strava API app](https://www.strava.com/settings/api) (Client ID/Secret), and an [Anthropic API key](https://console.anthropic.com). Docker is needed only for Garmin.
+**Prerequisites:** Go 1.26+, Node 22+, an [Anthropic API key](https://console.anthropic.com). Docker only for the Garmin server.
+
+Run the UI against canned answers first, with nothing else set up:
 
 ```bash
-cd backend
-cp .env.example .env         # fill in Strava + Anthropic credentials
-
-createdb runcoach_dev        # one-time (local Postgres)
-go run ./cmd/migrate up      # apply schema
-go run ./cmd/server          # API on http://localhost:8080
+cd backend && RUNCOACH_MOCK=1 go run ./cmd/server     # API on :8080, no credentials, no database
+cd frontend && npm install && npm run dev               # UI on :5173
 ```
 
-Then connect Strava and ask a question:
-
-```bash
-# 1. Authorize Strava (opens Strava's consent screen)
-open http://localhost:8080/auth/strava/login
-
-# 2. Prove the MCP path returns real activities
-go run ./cmd/strava-check
-
-# 3. Ask the coach → {"answer": "...", "sources": ["strava"]}
-curl -s localhost:8080/chat -d '{"question":"how many runs did I do last week?"}'
-```
-
-### Adding Garmin
-
-Garmin is wired in but **off unless configured** — `GARMIN_MCP_COMMAND` unset means Strava is the only source, so the backend never tries to launch a container that isn't there yet.
+Then connect your own Garmin:
 
 ```bash
 cd deploy/garmin-mcp
 docker compose build                                    # garmin_mcp at the pinned commit
-docker compose --profile auth run --rm garmin-mcp-auth  # interactive: login, then MFA code
+docker compose --profile auth run --rm garmin-mcp-auth  # interactive: email, password, MFA code, once
+
+cd ../../backend
+cp .env.example .env                                    # ANTHROPIC_API_KEY, uncomment GARMIN_MCP_COMMAND
+go run ./cmd/server
+curl -s localhost:8080/chat -d '{"question":"How did I sleep this week?"}'
 ```
 
-Uncomment `GARMIN_MCP_COMMAND` in `backend/.env` and restart — the server logs `agent tool sources: strava, garmin`. The auth step is one-off: it writes OAuth tokens (good for ~6 months) into a named volume the container reuses, so no credentials are needed per request.
+The auth step writes OAuth tokens (good for about six months) into a named volume the container reuses; no credential is needed per request. When they expire, run it again.
 
-> ⚠️ These steps are **written but not yet exercised** — the image has never been built and no Garmin account is connected. Phase 5 runs them for real. Note also that `garmin_mcp` drives Garmin Connect's *private* endpoints with a personal login: there is no official API, so it can break when Garmin changes them.
+> `garmin_mcp` drives Garmin Connect's private endpoints with a personal login. There is no public API behind it, so it can break when Garmin changes them; the coach then says "Garmin unavailable" rather than guessing.
 
-### Testing — no credentials, no Docker, no network
+### Testing: no credentials, no Docker, no network
 
 ```bash
-go test ./...
+cd backend && go test ./...
+cd frontend && npm test
 ```
 
-The agent's full tool-calling loop runs against **in-process stub MCP servers** and a **scripted stand-in for the Messages API**, covering tool namespacing and routing, each source-selection plan, and cross-source scenarios on fabricated sleep/pace datasets. One test asks the *real* model to choose its own sources over that fake data, and is skipped unless you opt in:
+The agent's full tool loop runs against **in-process stub MCP servers** and a **scripted stand-in for the Messages API**: tool namespacing and routing, the read-surface filter, the cache and effort markers on every request, and grounding scenarios on fabricated sleep and pace datasets. One test asks the *real* model to choose its own tools over that fake data, and is skipped unless you opt in:
 
 ```bash
 RUNCOACH_LIVE_MODEL_TESTS=1 go test ./internal/agent/ -run LiveModel -v   # costs Anthropic tokens
 ```
 
-## Roadmap
+## Status
 
-- [x] **Phase 1 — Design** · chat UI direction ("Field Notes"), locked in [`DESIGN.md`](DESIGN.md)
-- [x] **Phase 2 — Backend Foundations** · Go API, Postgres, Strava OAuth, self-hosted Strava MCP, Claude tool-loop
-- [x] **Phase 3 — Garmin Integration** · `garmin_mcp` container, second tool source, cross-source tool selection
-- [ ] **Phase 4 — Frontend** · Vue 3 chat UI against the Phase 1 design
-- [ ] **Phase 5 — Credentials & Live Verification** · real accounts end-to-end, then polish + demo
+- [x] Phases 1–4: design, Go backend, Garmin wiring, Vue chat UI, all against mocks
+- [ ] **Phase 5, Garmin core**: Strava removed, database optional, pin bumped, read surface filtered in Go, Garmin-only prompt on Opus 5.5
+- [ ] Phase 6, charts
+- [ ] Phase 7, shell: owner login, token paste, saved chats, sidebar
+- [ ] Phase 8, deploy on free tiers and test live
 
-> Phases 2–4 are **code checkpoints**: everything builds, and the MCP plumbing and agent behaviour are tested against stubs and fabricated data. Nothing has touched a live service yet — no Strava OAuth exchange, no Garmin account, no container built. All credential work is deliberately consolidated into Phase 5 so progress never blocks on account setup or API approvals, and everything gets validated together at one point rather than in scattered halves.
+Nothing has run against a live Garmin account yet. Phase 8 is where that happens, on purpose: the build phases need no account, and everything gets tested together once.
 
 ## Design
 
-The chat UI follows a **"Field Notes"** direction: quiet-luxury, one confident accent color, generous whitespace, and assistant replies that read as flowing prose rather than chat bubbles — a deliberate anti-chatbot move. Full reference in [`DESIGN.md`](DESIGN.md); working mockup at [`design/mockup.html`](design/mockup.html).
+The chat UI follows a **"Field Notes"** direction: quiet, one accent colour, generous whitespace, replies as flowing prose rather than chat bubbles. Full reference in [`DESIGN.md`](DESIGN.md); mockups in the design artifact linked from the spec.
 
 | Token | Hex | Role |
 |---|---|---|
-| `paper` | `#EDECE6` | App background (soft greige) |
-| `ink` | `#1C201C` | Primary text (forest-charcoal) |
-| `accent` | `#2E5D4E` | Deep pine green — the one accent |
+| `paper` | `#EDECE6` | App background |
+| `ink` | `#1C201C` | Primary text |
+| `accent` | `#2E5D4E` | Deep pine green, the one accent |
 
 ---
 
 <div align="center">
 
-**Built by [Leo Magsino Jr](https://github.com/lmagsino)** · Personal portfolio project · 2026
+**Built by [Leo Magsino Jr](https://github.com/lmagsino)** · Personal project · 2026 · Not affiliated with Garmin
 
 </div>

@@ -10,8 +10,8 @@ function recordingTransport(answer = 'An answer.') {
   const calls = []
   const transport = async (question, { onStep, onAnswer, history }) => {
     calls.push({ question, history })
-    onStep({ key: 'strava/list_activities', source: 'strava', tool: 'list_activities', state: 'active' })
-    onStep({ key: 'strava/list_activities', source: 'strava', tool: 'list_activities', state: 'done' })
+    onStep({ key: 'garmin/get_sleep_data', source: 'garmin', tool: 'get_sleep_data', state: 'active' })
+    onStep({ key: 'garmin/get_sleep_data', source: 'garmin', tool: 'get_sleep_data', state: 'done' })
     onAnswer(answer)
   }
   return { transport, calls }
@@ -119,7 +119,7 @@ describe('turns', () => {
     const { transport } = recordingTransport()
     const { turns, send } = useChat(transport)
     await send('q')
-    expect(turns.value[1].steps[0].label).toBe('Reading your Strava training log')
+    expect(turns.value[1].steps[0].label).toBe('Checking your Garmin sleep')
   })
 })
 

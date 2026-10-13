@@ -79,7 +79,7 @@ export async function streamChat(question, { onStep, onAnswer, history = [] }) {
   }
 
   // Failures before the stream opens are JSON with a status; the backend's
-  // messages are written for a person ("authorize first at /auth/strava/login"),
+  // messages are written for a person ("GARMIN_MCP_COMMAND is not set"),
   // so prefer them over a generic string.
   if (!res.ok) {
     let detail = `request failed (${res.status})`

@@ -20,21 +20,21 @@ Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
 
 ## Phase 5: Garmin core
 
-- [ ] 5.1 Remove Strava from the backend: `cmd/strava-mcp`, `cmd/strava-check`,
+- [x] 5.1 Remove Strava from the backend: `cmd/strava-mcp`, `cmd/strava-check`,
       `internal/strava`, `strava_auth.go`, `mcpclient/strava.go`, `Strava*` config, the
       multi-source prompt rules, the Strava migration and `activity_cache`; mock scenarios
       on Garmin tools only. Done when `grep -ri strava backend/` is empty and tests pass.
-- [ ] 5.2 Remove Strava from the frontend and docs: step labels, greeting, header, composer
+- [x] 5.2 Remove Strava from the frontend and docs: step labels, greeting, header, composer
       hint; README, CLAUDE.md, feature spec, `.env.example`. Done when only ADR 0001,
       PROGRESS history and the spec's revision note mention it.
-- [ ] 5.3 Database optional: the server starts without `DATABASE_URL`; `/healthz` says
+- [x] 5.3 Database optional: the server starts without `DATABASE_URL`; `/healthz` says
       `db: off` (ADR 0008).
-- [ ] 5.4 Garmin client: pin `GARMIN_MCP_REF=43b0c5b375fc1c7bd6bdbead69968dfabddec265`;
+- [x] 5.4 Garmin client: pin `GARMIN_MCP_REF=43b0c5b375fc1c7bd6bdbead69968dfabddec265`;
       `deploy/garmin-mcp/tools.txt` with the 155 upstream names; `mcpclient.ReadOnly(name)`
       deny pattern replaces `DefaultGarminTools`; `agent.buildTools` applies it; the child
       environment is built from scratch (no `GARMIN_EMAIL`/`GARMIN_PASSWORD`, ADR 0003);
       stub test proves a `delete_*` tool never reaches the model.
-- [ ] 5.5 Prompt and model: Garmin-only system prompt with a twelve-line category map
+- [x] 5.5 Prompt and model: Garmin-only system prompt with a twelve-line category map
       checked against `tools.txt`; `ANTHROPIC_MODEL` default `claude-opus-5-5`;
       `ANTHROPIC_EFFORT` (default `medium`) sent on every request; `cache_control` on the
       system prompt and the last tool, asserted by the scripted-model tests (ADR 0006).

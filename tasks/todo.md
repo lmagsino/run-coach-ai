@@ -1,11 +1,11 @@
 # Todo (details in tasks/plan.md)
 
 ## Phase 5: Garmin core (phase-5-garmin-core)
-- [ ] 5.1 Remove Strava from the backend
-- [ ] 5.2 Remove Strava from the frontend and docs
-- [ ] 5.3 Database optional
-- [ ] 5.4 Garmin client: pin bump, read-surface filter in Go, child env from scratch
-- [ ] 5.5 Garmin-only prompt, Opus 5.5, effort, caching
+- [x] 5.1 Remove Strava from the backend
+- [x] 5.2 Remove Strava from the frontend and docs
+- [x] 5.3 Database optional
+- [x] 5.4 Garmin client: pin bump, read-surface filter in Go, child env from scratch
+- [x] 5.5 Garmin-only prompt, Opus 5.5, effort, caching
 - [ ] Checkpoint: tests and CI green; mock mode Garmin-only; PR merged
 
 ## Phase 6: Charts (phase-6-charts)
