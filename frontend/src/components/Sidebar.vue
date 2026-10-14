@@ -12,6 +12,7 @@ const props = defineProps({
   currentId: { type: String, default: '' },
   garmin: { type: String, default: 'none' },
   usage: { type: Object, default: () => ({ today: 0, cap: 0 }) },
+  name: { type: String, default: '' },
   mock: { type: Boolean, default: false },
 })
 const emit = defineEmits(['new', 'open', 'delete', 'signout', 'close'])
@@ -77,7 +78,15 @@ function askDelete(id) {
     </div>
 
     <div class="flex flex-col gap-2 border-t border-line px-4 py-3">
-      <router-link to="/connection" class="flex min-w-0 no-underline hover:text-ink" @click="$emit('close')">
+      <router-link
+        v-if="name"
+        to="/account"
+        class="truncate text-[13.5px] font-medium text-ink no-underline hover:text-accent"
+        @click="$emit('close')"
+      >
+        {{ name }}
+      </router-link>
+      <router-link to="/account#garmin" class="flex min-w-0 no-underline hover:text-ink" @click="$emit('close')">
         <GarminChip :status="garmin" :mock="mock" />
       </router-link>
       <div class="flex items-center justify-between font-display text-[11px] tracking-[.08em] text-muted uppercase">

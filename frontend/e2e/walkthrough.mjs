@@ -169,11 +169,11 @@ if (!sseErr.includes('garmin tool failed')) fail("the backend's error message wa
 await page.unroute('**/api/chats/*/stream')
 await shot('walkthrough-error')
 
-// --------------------------------------------------------- connection page
-await page.goto(new URL('/connection', APP).toString(), { waitUntil: 'networkidle' })
+// ------------------------------------------------------------ account page
+await page.goto(new URL('/account', APP).toString(), { waitUntil: 'networkidle' })
 const conn = await page.locator('main').innerText()
-if (!/garmin-mcp-auth/.test(conn) || !/garmin_tokens\.b64/.test(conn)) fail('connection page does not show the laptop commands')
-if ((await page.locator('#bundle').count()) !== 1) fail('connection page has no paste box')
+if (!/garmin-mcp-auth/.test(conn) || !/garmin_tokens\.b64/.test(conn)) fail('account page does not show the laptop commands')
+if ((await page.locator('#bundle').count()) !== 1) fail('account page has no paste box')
 
 // ------------------------------------------------------------------ layout
 // DESIGN.md §4: the body never scrolls horizontally, at any width; below the

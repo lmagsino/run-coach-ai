@@ -77,8 +77,8 @@ type garminState struct {
 }
 
 const (
-	fixNone        = "Garmin is not connected. Run garmin-mcp-auth on your laptop and paste the token bundle on the Connection page."
-	fixExpired     = "Your Garmin tokens have expired. Run garmin-mcp-auth on your laptop and paste the new bundle on the Connection page."
+	fixNone        = "Garmin is not connected. Run garmin-mcp-auth on your laptop and paste the token bundle on your Account page."
+	fixExpired     = "Your Garmin tokens have expired. Run garmin-mcp-auth on your laptop and paste the new bundle on your Account page."
 	fixUnavailable = "Garmin did not answer. Try again in a few minutes; if it keeps failing, upstream may need an update."
 )
 

@@ -1,9 +1,10 @@
 <script setup>
-// Where the Garmin token bundle is pasted (ADR 0003). The sign-in itself
-// happens on the laptop with upstream's garmin-mcp-auth; this page takes the
-// one-line bundle it writes, the server probes it, and the chip changes.
+// The Garmin section of the account page (ADR 0003): the connection's state,
+// how to make a token bundle, and the box it is pasted into. The sign-in
+// itself happens on the runner's own computer; the server probes the bundle,
+// stores it encrypted, and the chip changes.
 import { computed, ref } from 'vue'
-import GarminChip from '../components/GarminChip.vue'
+import GarminChip from './GarminChip.vue'
 import { api } from '../lib/api.js'
 import { useSession } from '../lib/useSession.js'
 
@@ -55,11 +56,9 @@ async function remove() {
 </script>
 
 <template>
-  <main class="flex-1 overflow-y-auto px-[18px] pt-[30px] pb-[22px] wide:px-7 wide:pt-11">
-    <div class="mx-auto max-w-measure">
-      <p class="mb-3 font-display text-[10px] font-semibold tracking-[.2em] text-muted uppercase">Connection</p>
-      <h1 class="m-0 font-display text-[22px] font-semibold -tracking-[.02em]">Garmin</h1>
-      <p class="mt-2 mb-5 text-[15px] leading-[1.62] text-muted">
+  <section id="garmin">
+      <h2 class="m-0 font-display text-[17px] font-semibold -tracking-[.01em]">Garmin</h2>
+      <p class="mt-1 mb-4 text-[14.5px] leading-[1.6] text-muted">
         The coach reads your data with tokens you create on your own laptop. It never signs in to Garmin itself.
       </p>
 
@@ -74,7 +73,7 @@ async function remove() {
         </p>
       </div>
 
-      <h2 class="mt-7 mb-2 font-display text-[15px] font-semibold">Connect, or refresh expired tokens</h2>
+      <h3 class="mt-6 mb-2 font-display text-[14.5px] font-semibold">Connect, or refresh expired tokens</h3>
       <p class="mb-3 text-[14px] leading-[1.6] text-muted">
         On the laptop that runs the server, <code>deploy/garmin-mcp/auth.sh</code> does all of this and the
         server connects on its next start. The paste below is for a hosted copy, or a refresh from your phone.
@@ -126,9 +125,9 @@ docker compose --profile auth run --rm garmin-mcp-auth</pre>
         </div>
       </form>
 
-      <p class="mt-8 mb-0 text-[12.5px] text-muted">
-        Not affiliated with Garmin. Read-only: the coach is never offered a tool that writes.
+      <p class="mt-4 mb-0 text-[12.5px] text-muted">
+        Not affiliated with Garmin. Read-only: the coach is never offered a tool that writes. The bundle is
+        stored encrypted and deleted with your account.
       </p>
-    </div>
-  </main>
+  </section>
 </template>

@@ -1,7 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useSession } from './lib/useSession.js'
 import ChatPage from './pages/ChatPage.vue'
-import ConnectionPage from './pages/ConnectionPage.vue'
+import AccountPage from './pages/AccountPage.vue'
 import LoginPage from './pages/LoginPage.vue'
 import SignUpPage from './pages/SignUpPage.vue'
 
@@ -12,7 +12,8 @@ export const router = createRouter({
     { path: '/signup', name: 'signup', component: SignUpPage, meta: { public: true } },
     { path: '/', name: 'home', component: ChatPage },
     { path: '/c/:id', name: 'chat', component: ChatPage, props: true },
-    { path: '/connection', name: 'connection', component: ConnectionPage },
+    { path: '/account', name: 'account', component: AccountPage },
+    { path: '/connection', redirect: { path: '/account', hash: '#garmin' } },
     { path: '/:rest(.*)', redirect: '/' },
   ],
 })

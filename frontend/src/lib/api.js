@@ -51,6 +51,9 @@ export const api = {
   renameChat: (id, title) => request('PATCH', `/chats/${id}`, { title }),
   deleteChat: (id) => request('DELETE', `/chats/${id}`),
   messages: (id) => request('GET', `/chats/${id}/messages`).then((d) => d.messages ?? []),
+  updateAccount: (fields) => request('PATCH', '/account', fields),
+  changePassword: (fields) => request('POST', '/account/password', fields),
+  deleteAccount: (fields) => request('DELETE', '/account', fields),
   garminTokens: (bundle) => request('POST', '/garmin/tokens', { bundle }),
   garminTokensDelete: () => request('DELETE', '/garmin/tokens'),
 }

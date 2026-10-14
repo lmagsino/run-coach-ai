@@ -40,7 +40,7 @@ defineEmits(['menu'])
         <span class="size-1.5 flex-none rounded-full border border-muted" aria-hidden="true" />
         <span class="truncate">{{ error }}</span>
       </template>
-      <router-link v-else to="/connection" class="flex min-w-0 no-underline hover:text-ink">
+      <router-link v-else to="/account#garmin" class="flex min-w-0 no-underline hover:text-ink">
         <GarminChip :status="garmin" :mock="mock" />
       </router-link>
     </div>

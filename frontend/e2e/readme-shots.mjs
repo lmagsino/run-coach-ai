@@ -9,7 +9,7 @@
 
 import { chromium } from 'playwright'
 
-const APP = process.env.E2E_URL ?? 'http://localhost:8080/'
+const APP = process.env.E2E_URL ?? 'http://localhost:8787/'
 const OUT = process.env.README_SHOTS ?? '../docs/screenshots'
 const mode = process.argv[2] ?? 'chat'
 
@@ -68,8 +68,8 @@ if (mode === 'chat') {
   await page.fill('#password', process.env.READMESHOT_PASSWORD ?? 'runcoach')
   await page.press('#password', 'Enter')
   await page.waitForURL((u) => !u.pathname.startsWith('/login'))
-  await page.goto(new URL('/connection', APP).toString(), { waitUntil: 'networkidle' })
-  await page.screenshot({ path: `${OUT}/connection.png` })
+  await page.goto(new URL('/account', APP).toString(), { waitUntil: 'networkidle' })
+  await page.screenshot({ path: `${OUT}/connection.png`, fullPage: true })
   await page.close()
 }
 await browser.close()

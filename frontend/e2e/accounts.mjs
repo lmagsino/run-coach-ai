@@ -86,6 +86,36 @@ await page.waitForSelector('aside nav[aria-label="Chats"]')
 if (!/Ana's long run/.test(await page.locator('aside').innerText())) fail('Ana lost her chat after signing back in')
 console.log('Ana signed back in by email; her chat is there')
 
+// ---------------------------------------------- the account page
+await page.goto(url('/account'), { waitUntil: 'networkidle' })
+await page.fill('#acc-name', 'Ana R')
+await page.locator('#profile').getByRole('button', { name: 'Save' }).click()
+await page.locator('#profile [role="status"]').waitFor()
+if (!/Ana R/.test(await page.locator('aside').innerText())) fail('the sidebar does not show the new name')
+if (!/0 of 10 questions today/.test(await page.locator('main').innerText())) fail('the account page does not show the member cap')
+if ((await page.locator('#garmin #bundle').count()) !== 1) fail('the Garmin section has no paste box')
+await shot('accounts-page')
+
+const NEW_PW = 'ana-even-longer-password'
+await page.fill('#acc-current', ANA.password)
+await page.fill('#acc-new', NEW_PW)
+await page.getByRole('button', { name: 'Change password' }).click()
+await page.locator('#password [role="status"]').waitFor()
+const pwMsg = await page.locator('#password [role="status"]').innerText()
+if (!/Password changed/.test(pwMsg)) fail(`password change said: ${pwMsg}`)
+console.log('renamed to Ana R; password changed')
+
+await page.fill('#acc-delete', NEW_PW)
+await page.getByRole('button', { name: 'Delete my account' }).click()
+await page.getByRole('button', { name: 'Yes, delete everything' }).click()
+await page.waitForURL((u) => u.pathname.startsWith('/login'))
+await page.fill('#email', ANA.email)
+await page.fill('#password', NEW_PW)
+await page.getByRole('button', { name: 'Sign in' }).click()
+await page.waitForSelector('[role="alert"]')
+if (!/wrong email or password/i.test(await page.locator('[role="alert"]').innerText())) fail('a deleted account could still sign in')
+console.log('account deleted; signing in with it is refused')
+
 await browser.close()
 if (problems.length) {
   console.error('\nFAILED:\n  ' + problems.join('\n  '))
