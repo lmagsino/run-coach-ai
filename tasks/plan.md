@@ -14,9 +14,11 @@ data and the real model. Each phase is one branch and one PR to `main`.
 | 6 Charts | `phase-6-charts` | `coach__show_chart`, SSE `chart`, `lib/chart.js`, `ChartCard.vue`, two mock scenarios | ≈ 3 d |
 | 7 Shell | `phase-7-shell` | fresh migrations with `runner_id`, owner login, token paste, saved chats, sidebar, phone drawer, one origin | ≈ 4 d |
 | 8 Deploy and test | `phase-8-deploy` | one image, Render free + Neon free, Garmin tokens pasted, live pass on the five questions, Playwright smoke | ≈ 3 d |
+| 9 Accounts | `phase-9-accounts` | sign up by invite, sign in with email, account settings, Garmin per runner by a pasted bundle, cost guards, tenancy proof | ≈ 4 d |
 
 Later, after use: streaming deltas and Stop, dark theme, suggestions, search and rename,
-Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
+Haiku titles. Roadmap: a hosted sign-in gateway for runners who cannot make a bundle
+themselves (ADR 0002, 0010).
 
 ## Phase 5: Garmin core
 
@@ -118,6 +120,77 @@ Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
 - [ ] Done: Leo asks a question from his phone and gets a grounded reply with a chart;
       removing the token row shows the fix text, never a pretend answer.
 
+## Phase 9: Accounts (planned 14 Oct 2026)
+
+Other runners get their own account, their own chats and their own Garmin connection.
+Garmin is connected the way it is today: each runner makes a token bundle once on their
+own computer and pastes it; the server never signs in to Garmin for anyone (ADR 0003, and
+the 14 Oct research: datacenter sign-ins fail). Sign-up is by invite code, because every
+reply is billed to one API key; caps bound the spend per runner and per day.
+
+Decisions this phase adds (ADR 0010): accounts are email + password with no email
+verification (the invite code is the gate; the owner resets a password from the CLI);
+members get a lower default cap and a global daily cap sits above everyone; a deleted
+account is a hard delete that takes its chats, usage and bundle with it.
+
+Dependency graph: 9.1 (accounts in the store, email login) → 9.2 (sign-up) → 9.3 (tenancy
+proof) → 9.4 (account endpoints) → 9.5 (account page) → 9.7 (caps). 9.6 (member Garmin
+onboarding) depends only on 9.2. 9.8 (docs) last.
+
+- [ ] 9.1 Accounts in the store and email sign-in: migration `000002_members` adds
+      `email` (unique, nullable), `password_hash`, `status active|disabled`,
+      `last_login_at` to `runners` and widens `kind` to `owner|member|garmin`; the store
+      gains `RunnerByID`, `RunnerByEmail`, `CreateRunner`, `UpdateRunner`, `DeleteRunner`,
+      `DeleteSessionsFor`, `GlobalUsage`, on both implementations with the shared suite;
+      `auth.EmailPassword` replaces `OwnerPassword` for `POST /api/login {email, password}`
+      (an empty email still means the owner, so today's login keeps working); the owner's
+      email and hash are upserted on start from `RUNCOACH_OWNER_EMAIL` and the existing
+      hash; `/api/me`, `checkCap` and the mock middleware read the runner's own row, not
+      `Owner()`. Done when a runner row with an email can sign in and `/api/me` shows its
+      own name and cap. M.
+- [ ] 9.2 Sign-up: `POST /api/signup {email, display_name, password, invite_code}` creates
+      a `member` with the member cap, sets the session cookie, audits `sign_up`; refused
+      with 403 when the code does not match `RUNCOACH_INVITE_CODE` (and when that is
+      unset: sign-up closed), 409 on a used email, 422 on a short password (10+) or a bad
+      email; rate-limited like login. `SignUpPage.vue` (email, name, password, invite code,
+      one error line); `LoginPage.vue` gains the email field and a "Create account" link.
+      Done when a second person can create an account and land in an empty chat. M.
+- [ ] 9.3 Tenancy proof: an API test signs up two runners and asserts each sees only its
+      own chats, messages, Garmin row and usage, and gets 404 for the other's chat id; a
+      browser walkthrough `frontend/e2e/accounts.mjs` against a non-mock in-memory server
+      (no API key needed: it stops at the chat) covers sign-up, sign-out, sign-in, and
+      the second account seeing an empty sidebar. S.
+- [ ] 9.4 Account endpoints: `PATCH /api/account {display_name}`;
+      `POST /api/account/password {current, new}` (revokes every other session);
+      `DELETE /api/account {password}` (hard delete, cascades to chats, messages, usage,
+      sessions and the Garmin row; the owner cannot delete itself); `cmd/set-password
+      <email>` for the owner to reset a member offline. Each audited. S.
+- [ ] 9.5 Account page: `/account` with sections Profile (name), Password, Garmin (the
+      current Connection content), Usage (today of cap), Delete account (type the password);
+      `/connection` redirects to `/account#garmin`; the sidebar shows the display name and
+      links to the page; `useSession` carries `kind` and `display_name`. M.
+- [ ] 9.6 Member Garmin onboarding: the Garmin section shows a member the two ways to make
+      a bundle without cloning the repo: `uvx --from "garmin-mcp @ git+https://github.com/
+      Taxuspt/garmin_mcp@<pin>" garmin-mcp-auth` then `cat ~/.garminconnect_base64 | pbcopy`,
+      or Docker with a published image; a GitHub Actions workflow builds
+      `deploy/garmin-mcp` and pushes `ghcr.io/lmagsino/garmin-mcp-auth:<pin>` on changes to
+      that directory; the owner keeps the start-up import. Done when a member with no clone
+      can connect from the instructions on the page. S.
+- [ ] 9.7 Cost guards: members default to `RUNCOACH_MEMBER_CAP` (10) questions a day, the
+      owner keeps 30; `RUNCOACH_GLOBAL_DAILY_CAP` (100) across all runners returns 429 "the
+      coach has done its questions for today" before any model call; the reply log line
+      carries the runner id; sign-up disabled when the global cap is unset to zero. S.
+- [ ] 9.8 Docs: ADR 0010, CONTEXT.md (member, invite code, global cap), README "For other
+      runners", `.env.example` and `render.yaml` (owner email, invite code, caps), PROGRESS. S.
+- [ ] Checkpoint: Go, vitest and both walkthroughs green; on the local server two accounts
+      each with their own chats and Garmin state; sign-up refused without the code; member
+      capped at 10; a deleted account leaves no rows. PR to `main`.
+
+Out of scope, on purpose: server-side Garmin sign-in for members (ADR 0003), email
+verification and password-reset mail (no mail service on free tiers; the invite code and
+the CLI reset cover a handful of invited runners), an admin page (the audit log and the
+reply log are enough for now), OAuth sign-in.
+
 ## Risks
 
 | Risk | Where it is caught |
@@ -127,3 +200,6 @@ Haiku titles. Roadmap: other runners through the MissingMCP gateway (ADR 0002).
 | Cost per question above the estimate | 8.4 measures with and without cache; effort dial; Sonnet 5.5 one line away |
 | Render's proxy drops long SSE streams | keepalive in 7.7; proven in 8.4 |
 | Token bundle file names differ from the assumption | 8.3 records them before 7.3's spawn is trusted live; the probe fails loudly otherwise |
+| Invited runners spend the owner's API credit | invite code, member cap, global daily cap, usage per runner in the log (9.2, 9.7) |
+| A member cannot make a bundle on their own computer | the page gives a `uvx` one-liner and a published Docker image (9.6); the gateway stays the roadmap answer for everyone else |
+| Holding other people's Garmin tokens | encrypted at rest, never a password, deleted with the account (9.4); the privacy line on the page says what is held |
