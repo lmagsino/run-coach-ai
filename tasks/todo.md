@@ -37,12 +37,12 @@
 - [ ] Done: grounded reply with a chart on the phone
 
 ## Phase 9: Accounts (phase-9-accounts; needs Phase 7 on main)
-- [ ] 9.1 Accounts in the store and email sign-in (migration 000002, store methods, `auth.EmailPassword`, owner from env)
-- [ ] 9.2 Sign-up by invite code, SignUpPage, email on LoginPage
-- [ ] 9.3 Tenancy proof: two-runner API test, `e2e/accounts.mjs`
-- [ ] 9.4 Account endpoints: name, password (revokes sessions), delete (hard), `cmd/set-password`
-- [ ] 9.5 Account page with Profile, Password, Garmin, Usage, Delete; sidebar name
-- [ ] 9.6 Member Garmin onboarding: uvx one-liner, published auth image via GitHub Actions
-- [ ] 9.7 Cost guards: member cap, global daily cap, runner id in the reply log
-- [ ] 9.8 Docs: ADR 0010, CONTEXT.md, README "For other runners", env example, render.yaml
-- [ ] Checkpoint: two accounts isolated locally; sign-up gated; caps enforced; walkthroughs green; PR merged
+- [x] 9.1 Accounts in the store and email sign-in (migration 000002, store methods, `auth.EmailPassword`, owner from env)
+- [x] 9.2 Sign-up by invite code, SignUpPage, email on LoginPage
+- [x] 9.3 Tenancy proof: two-runner API test, `e2e/accounts.mjs`
+- [x] 9.4 Account endpoints: name, password (revokes sessions), delete (hard), `cmd/set-password`
+- [x] 9.5 Account page with Profile, Password, Garmin, Usage, Delete; sidebar name
+- [x] 9.6 Member Garmin onboarding: uvx one-liner, published auth image via GitHub Actions
+- [x] 9.7 Cost guards: member cap, global daily cap, runner id in the reply log
+- [x] 9.8 Docs: ADR 0010, CONTEXT.md, README "For other runners", env example, render.yaml
+- [x] Checkpoint: two accounts isolated locally; sign-up gated; caps enforced; walkthroughs green (merged straight to main)

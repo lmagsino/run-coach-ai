@@ -156,5 +156,7 @@ live last (8). Issues #24–#29 are superseded.
       hand-rolled SVG, two mock scenarios
 - [x] **Phase 7 Shell** (`phase-7-shell`): fresh migrations with `runner_id`, owner login, token
       paste, saved chats, sidebar, phone drawer, one origin
+- [x] **Phase 9 Accounts** (14 Oct 2026, on `main`): sign-up by invite, email sign-in, account
+      page, Garmin per runner by a pasted bundle, member and global caps, tenancy proof (ADR 0010)
 - [ ] **Phase 8 Deploy and test** (`phase-8-deploy`): one image on Render free + Neon free, Garmin
       auth and paste, live pass from the phone, Playwright smoke

@@ -137,7 +137,7 @@ Dependency graph: 9.1 (accounts in the store, email login) → 9.2 (sign-up) →
 proof) → 9.4 (account endpoints) → 9.5 (account page) → 9.7 (caps). 9.6 (member Garmin
 onboarding) depends only on 9.2. 9.8 (docs) last.
 
-- [ ] 9.1 Accounts in the store and email sign-in: migration `000002_members` adds
+- [x] 9.1 Accounts in the store and email sign-in: migration `000002_members` adds
       `email` (unique, nullable), `password_hash`, `status active|disabled`,
       `last_login_at` to `runners` and widens `kind` to `owner|member|garmin`; the store
       gains `RunnerByID`, `RunnerByEmail`, `CreateRunner`, `UpdateRunner`, `DeleteRunner`,
@@ -148,39 +148,39 @@ onboarding) depends only on 9.2. 9.8 (docs) last.
       hash; `/api/me`, `checkCap` and the mock middleware read the runner's own row, not
       `Owner()`. Done when a runner row with an email can sign in and `/api/me` shows its
       own name and cap. M.
-- [ ] 9.2 Sign-up: `POST /api/signup {email, display_name, password, invite_code}` creates
+- [x] 9.2 Sign-up: `POST /api/signup {email, display_name, password, invite_code}` creates
       a `member` with the member cap, sets the session cookie, audits `sign_up`; refused
       with 403 when the code does not match `RUNCOACH_INVITE_CODE` (and when that is
       unset: sign-up closed), 409 on a used email, 422 on a short password (10+) or a bad
       email; rate-limited like login. `SignUpPage.vue` (email, name, password, invite code,
       one error line); `LoginPage.vue` gains the email field and a "Create account" link.
       Done when a second person can create an account and land in an empty chat. M.
-- [ ] 9.3 Tenancy proof: an API test signs up two runners and asserts each sees only its
+- [x] 9.3 Tenancy proof: an API test signs up two runners and asserts each sees only its
       own chats, messages, Garmin row and usage, and gets 404 for the other's chat id; a
       browser walkthrough `frontend/e2e/accounts.mjs` against a non-mock in-memory server
       (no API key needed: it stops at the chat) covers sign-up, sign-out, sign-in, and
       the second account seeing an empty sidebar. S.
-- [ ] 9.4 Account endpoints: `PATCH /api/account {display_name}`;
+- [x] 9.4 Account endpoints: `PATCH /api/account {display_name}`;
       `POST /api/account/password {current, new}` (revokes every other session);
       `DELETE /api/account {password}` (hard delete, cascades to chats, messages, usage,
       sessions and the Garmin row; the owner cannot delete itself); `cmd/set-password
       <email>` for the owner to reset a member offline. Each audited. S.
-- [ ] 9.5 Account page: `/account` with sections Profile (name), Password, Garmin (the
+- [x] 9.5 Account page: `/account` with sections Profile (name), Password, Garmin (the
       current Connection content), Usage (today of cap), Delete account (type the password);
       `/connection` redirects to `/account#garmin`; the sidebar shows the display name and
       links to the page; `useSession` carries `kind` and `display_name`. M.
-- [ ] 9.6 Member Garmin onboarding: the Garmin section shows a member the two ways to make
+- [x] 9.6 Member Garmin onboarding: the Garmin section shows a member the two ways to make
       a bundle without cloning the repo: `uvx --from "garmin-mcp @ git+https://github.com/
       Taxuspt/garmin_mcp@<pin>" garmin-mcp-auth` then `cat ~/.garminconnect_base64 | pbcopy`,
       or Docker with a published image; a GitHub Actions workflow builds
       `deploy/garmin-mcp` and pushes `ghcr.io/lmagsino/garmin-mcp-auth:<pin>` on changes to
       that directory; the owner keeps the start-up import. Done when a member with no clone
       can connect from the instructions on the page. S.
-- [ ] 9.7 Cost guards: members default to `RUNCOACH_MEMBER_CAP` (10) questions a day, the
+- [x] 9.7 Cost guards: members default to `RUNCOACH_MEMBER_CAP` (10) questions a day, the
       owner keeps 30; `RUNCOACH_GLOBAL_DAILY_CAP` (100) across all runners returns 429 "the
       coach has done its questions for today" before any model call; the reply log line
       carries the runner id; sign-up disabled when the global cap is unset to zero. S.
-- [ ] 9.8 Docs: ADR 0010, CONTEXT.md (member, invite code, global cap), README "For other
+- [x] 9.8 Docs: ADR 0010, CONTEXT.md (member, invite code, global cap), README "For other
       runners", `.env.example` and `render.yaml` (owner email, invite code, caps), PROGRESS. S.
 - [ ] Checkpoint: Go, vitest and both walkthroughs green; on the local server two accounts
       each with their own chats and Garmin state; sign-up refused without the code; member

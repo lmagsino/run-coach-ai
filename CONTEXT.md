@@ -12,9 +12,23 @@ A person whose Garmin data the coach reads. Every stored row belongs to exactly 
 _Avoid_: user, athlete, account
 
 **Owner**:
-The one runner who exists today (Leo). The owner is row one of `runners`, not a special
-code path; nothing in the routes checks "is this the owner".
+The runner who runs this instance (Leo): row one of `runners`, signs in like anyone else,
+cannot delete their own account. Nothing in the routes checks "is this the owner".
 _Avoid_: admin, Leo (in code)
+
+**Member**:
+A runner who signed up with an invite code. Same powers as the owner over their own data,
+a lower daily cap, and can delete their account.
+_Avoid_: guest, user
+
+**Invite code**:
+The shared word that opens sign-up. Without one set, sign-up is closed.
+_Avoid_: token, referral
+
+**Account**:
+A runner's sign-in (email and password) and the page where they change their name,
+password and Garmin connection, or delete everything.
+_Avoid_: profile (one section of the account page), user
 
 **Coach**:
 The assistant persona: the model, the system prompt and the tool loop together.
@@ -65,16 +79,16 @@ when the reply is done.
 **Token bundle**:
 The base64 string `garmin-mcp-auth` writes to `~/.garminconnect_base64`: the runner's
 Garmin OAuth tokens, valid for roughly six months. The only Garmin credential the hosted
-service ever holds, stored encrypted.
+service ever holds, stored encrypted, one per runner, deleted with the account.
 _Avoid_: credentials, password, login
 
 **Garmin connection**:
 A runner's stored token bundle plus its state: connected, expired or unavailable.
 
-**Sign-in**:
-Entering a Garmin email, password and MFA code. Happens only on the owner's laptop, never on
-the hosted service.
-_Avoid_: login (that word is the owner's password login to RunCoach)
+**Garmin sign-in**:
+Entering a Garmin email, password and MFA code into `garmin-mcp-auth`. Happens only on the
+runner's own computer, never on the hosted service.
+_Avoid_: login (that word is a runner's sign-in to RunCoach)
 
 **Probe**:
 The one cheap Garmin call (the user profile) that tells whether a token bundle still works.
@@ -92,8 +106,12 @@ shape, not by a stale name.
 ### Operation
 
 **Cap**:
-The number of questions a runner may ask per day (30 for the owner). A cost guard, not a
-product rule.
+The number of questions a runner may ask per day (30 for the owner, 10 for a member). A
+cost guard, not a product rule.
+
+**Global cap**:
+The number of questions every runner together may ask per day, above the per-runner caps;
+the last line under the API bill.
 
 **Mock mode**:
 `RUNCOACH_MOCK=1`: the server replays canned steps, a chart and a reply for the five

@@ -18,8 +18,17 @@ services:
         value: claude-opus-5-5
       - key: ANTHROPIC_EFFORT
         value: medium
+      - key: RUNCOACH_OWNER_EMAIL
+        sync: false
       - key: RUNCOACH_OWNER_PASSWORD_HASH
         sync: false
+      # Leave unset to keep sign-up closed; set it to invite other runners.
+      - key: RUNCOACH_INVITE_CODE
+        sync: false
+      - key: RUNCOACH_MEMBER_CAP
+        value: "10"
+      - key: RUNCOACH_GLOBAL_DAILY_CAP
+        value: "100"
       - key: RUNCOACH_TOKEN_KEY
         sync: false
       - key: GARMIN_MCP_COMMAND

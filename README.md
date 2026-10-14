@@ -99,10 +99,10 @@ The coach has a `show_chart` tool next to the Garmin ones. After reading the dat
 
 ### Signing in, and connecting Garmin
 
-One password for the owner, remembered for 30 days. Garmin is connected with a token bundle created once on your own laptop by upstream's `garmin-mcp-auth`; the server imports it on start (or from a paste, on a hosted copy), checks it with one profile read, stores it encrypted, and hands it to each spawned `garmin-mcp`. **The hosted server never signs in to Garmin itself.**
+Every runner signs in with an email and a password, remembered for 30 days. Garmin is connected with a token bundle created once on your own laptop by upstream's `garmin-mcp-auth`; the server imports it on start (or from a paste, on a hosted copy), checks it with one profile read, stores it encrypted, and hands it to each spawned `garmin-mcp`. **The hosted server never signs in to Garmin itself.**
 
 <p>
-<img src="docs/screenshots/login.png" alt="Owner sign-in" width="440">
+<img src="docs/screenshots/login.png" alt="Sign-in with email and password" width="440">
 <img src="docs/screenshots/connection.png" alt="The Connection page where the Garmin token bundle is pasted" width="440">
 </p>
 
@@ -163,6 +163,21 @@ Open the UI, sign in, and ask. When the bundle expires, about six months later, 
 
 Pricing is per token, so every question has a price. Measured on the question above, on Sonnet 5.5: about 8k input tokens, 59k read from cache at a tenth of the price, 1k output, roughly five cents. The triage step on Haiku is a fraction of that, the daily cap is 30 questions, and `ANTHROPIC_MODEL` switches between Haiku, Sonnet and Opus with no other change.
 
+### For other runners
+
+RunCoach takes other runners by invite. Set `RUNCOACH_INVITE_CODE` and share it with them; they create an account with their email, a password and the code. Each runner then connects their own Garmin from the account page by making a token bundle on their own computer, with no clone of this repo:
+
+```bash
+uvx --from "garmin-mcp @ git+https://github.com/Taxuspt/garmin_mcp@43b0c5b375fc1c7bd6bdbead69968dfabddec265" garmin-mcp-auth
+cat ~/.garminconnect_base64 | pbcopy        # then paste it on the account page
+```
+
+or with Docker, using the image this repo publishes (`ghcr.io/lmagsino/garmin-mcp`). Their Garmin password stays on their computer; the server only ever holds the encrypted bundle, and deleting the account deletes it. Every runner's questions are billed to your API key, so members get 10 questions a day by default and a global cap of 100 a day sits above everyone ([ADR 0010](docs/adr/0010-other-runners-by-invite-with-a-pasted-bundle.md)).
+
+<p>
+<img src="docs/screenshots/account.png" alt="The account page: name, today's usage, and the Garmin section with the uv and Docker commands for making a token bundle" width="900">
+</p>
+
 ### Deploy, free
 
 `Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and set `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_PASSWORD_HASH`, `RUNCOACH_TOKEN_KEY` and `RUNCOACH_GARMIN_BUNDLE` (the line `bundle.sh` prints) in the dashboard. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
@@ -188,6 +203,7 @@ RUNCOACH_LIVE_MODEL_TESTS=1 go test ./internal/agent/ -run LiveModel -v   # cost
 - [x] Phase 6, charts: one validated chart card per reply
 - [x] Phase 7, shell: owner login, token paste, saved chats, sidebar and phone drawer, one origin
 - [x] Live on my own account: the sign-in, the bundle import, triage, the first real replies with charts
+- [x] Phase 9, accounts: sign-up by invite, email sign-in, account page, Garmin per runner, member and global caps
 - [ ] **Phase 8, deploy on free tiers**: image and blueprint written; the Render + Neon setup, the full five-question pass and Playwright in CI remain
 
 The plan and its checklist are in [`tasks/`](tasks/).

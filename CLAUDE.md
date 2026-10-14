@@ -70,6 +70,18 @@ backend/
 └── .env.example
 ```
 
+### Accounts (Phase 9, ADR 0010)
+Runners sign in with an email and a password (`auth.EmailPassword`; an empty email means the
+owner). `POST /api/signup` needs `RUNCOACH_INVITE_CODE`; members get `RUNCOACH_MEMBER_CAP`.
+`PATCH /api/account`, `POST /api/account/password` (signs out other sessions),
+`DELETE /api/account` (members only; cascades to everything the runner owns).
+`cmd/set-password <email|owner>` resets from the CLI. The rate limiter counts failures only.
+`checkCap` applies the runner's cap, then `RUNCOACH_GLOBAL_DAILY_CAP` across everyone. Members
+make their bundle with the `uvx` one-liner or `ghcr.io/lmagsino/garmin-mcp` (published by
+`.github/workflows/garmin-mcp-image.yml`); `frontend/src/lib/garmin.js` holds the commands and a
+test keeps their pin equal to the Dockerfile's. `npm run e2e:accounts` walks two accounts
+through sign-up, isolation, rename, password change and delete.
+
 ### Data, sessions and the shell (Phase 7)
 - **`internal/store` is the only data access** (ADR 0002). Every statement on a runner's
   table names `runner_id`; a test scans `pg.go` for that and fails if SQL appears anywhere
@@ -196,7 +208,9 @@ See `backend/.env.example`. Summary:
 | `PORT` | HTTP port (default 8787 locally; hosts set their own). Not 8080: on the work laptop a security agent stalls PATCH requests to localhost:8080 |
 | `DATABASE_URL` | Postgres connection string. **Optional** until Phase 7; unset ⇒ `/healthz` says `db: off` |
 | `GARMIN_MCP_COMMAND` | Command to launch garmin-mcp (default `garmin-mcp`; local dev: the Docker image). The stored bundle is passed as `GARMINTOKENS` |
-| `RUNCOACH_OWNER_PASSWORD_HASH` | bcrypt hash for the owner login (`cmd/hash-password`). Unset ⇒ nobody can log in |
+| `RUNCOACH_OWNER_EMAIL` / `RUNCOACH_OWNER_PASSWORD_HASH` | The owner's sign-in, applied only where the owner row has none (ADR 0010). Quote the hash |
+| `RUNCOACH_INVITE_CODE` | Opens sign-up for other runners. Unset ⇒ sign-up closed |
+| `RUNCOACH_MEMBER_CAP` / `RUNCOACH_GLOBAL_DAILY_CAP` | Daily questions for a new member (10) and for everyone together (100; 0 = off) |
 | `RUNCOACH_TOKEN_KEY` | base64 32-byte key sealing the stored bundle (`cmd/token-key`) |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | Read only by the one-off `garmin-mcp-auth` step via compose. The server never reads them and never passes them to the child |
 | `GARMIN_IS_CN` | `true` only for Garmin Connect China |
@@ -206,7 +220,11 @@ See `backend/.env.example`. Summary:
 | `ALLOWED_ORIGIN` | Browser origin allowed by CORS. Empty (default) disables CORS; the UI shares the API's origin |
 | `RUNCOACH_MOCK` | **Dev only.** `1`/`true`/`yes`/`on` ⇒ canned answers, no credentials, no database |
 
-## Current phase
+## Current phase (updated 14 Oct 2026)
+Phase 9 (accounts) is built: sign-up by invite, email sign-in, account page, per-runner Garmin
+bundles, caps. Phase 8 (free hosting) is next.
+
+## Earlier status
 Phases 5 (Garmin core), 6 (charts) and 7 (shell: login, token paste, saved chats, sidebar, one
 origin) are built against mocks and tests. Next: Phase 8 deploy on free tiers and the live
 pass. Track in `tasks/todo.md`. Nothing has run against a live Garmin account yet; Phase 8 is
