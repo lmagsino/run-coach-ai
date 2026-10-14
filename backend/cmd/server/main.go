@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,14 +45,14 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.Port,
+		Addr:              net.JoinHostPort(cfg.Host, cfg.Port),
 		Handler:           api.New(cfg, pool).Routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// Run the server until an interrupt signal, then shut down gracefully.
 	go func() {
-		log.Printf("listening on http://localhost:%s", cfg.Port)
+		log.Printf("listening on http://%s", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("server error: %v", err)
 		}

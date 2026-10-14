@@ -40,9 +40,9 @@ run-coach-ai/
 - One branch per phase (`phase-5-garmin-core`, `phase-6-charts`, `phase-7-shell`,
   `phase-8-deploy`), one PR to `main` each.
 - Git identity in this repo is the personal account (`leo.magsino819@gmail.com`).
-- **Run it with `go run`, never a binary you build and launch yourself.** Locally the
-  server is `go run ./cmd/server` in `backend/` and the UI is `npm run dev` in `frontend/`;
-  scratch files go in the repo's ignored `tmp/`. Never `go build -o` a server and start it
+- **Run it with `bin/dev`, never a binary you build and launch yourself.** `bin/dev` runs
+  the server (`go run`) and the UI (Vite) in the foreground, like ShiftCare's; restart by
+  stopping it and running it again. Scratch files go in the repo's ignored `tmp/`. Never `go build -o` a server and start it
   from a script, and never put or launch anything in `/tmp`: on the work laptop
   CrowdStrike blocked exactly that as malware (a compiled server in `/tmp` started by a
   shell script in `/tmp`), while `go run` has never been flagged. Don't run our own server
@@ -164,8 +164,8 @@ labels, faint partial bars, least-squares trend) with a "View data" table.
 ```bash
 cd backend
 cp .env.example .env            # first time; ANTHROPIC_API_KEY, GARMIN_MCP_COMMAND
-RUNCOACH_MOCK=1 go run ./cmd/server   # canned answers, no credentials, no database
-go run ./cmd/server             # live: needs the key and the authenticated Garmin image
+RUNCOACH_MOCK=1 ../bin/dev      # canned answers, no credentials, no database; API + UI
+../bin/dev                      # live: needs the key and the authenticated Garmin image
 curl localhost:8787/healthz     # {"status":"ok","db":"off"} without DATABASE_URL
 curl -s localhost:8787/api/chat -d '{"question":"how did I sleep this week?"}'
 ```

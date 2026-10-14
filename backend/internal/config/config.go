@@ -17,6 +17,11 @@ type Config struct {
 	// PATCH requests to localhost while letting every other method through.
 	Port string
 
+	// Host is the listen address. It defaults to 127.0.0.1 so a laptop never
+	// serves the app to the Wi-Fi it is on; the Dockerfile sets 0.0.0.0, which a
+	// host needs to route traffic in.
+	Host string
+
 	// DatabaseURL is optional until chats are persisted (Phase 7, ADR 0008).
 	// Empty means the server runs without a database and /healthz reports it.
 	DatabaseURL string
@@ -77,11 +82,16 @@ type Config struct {
 // keys for other tools (an old ANTHROPIC_API_KEY once sent every request to the
 // wrong organisation), and a value written into the project's .env is the
 // intent. Hosts have no .env, so there the environment is all there is.
+// RUNCOACH_ENV_FILE names another file, or "none" for the shell alone, so a
+// test server can run from the repo without the owner's .env.
 func Load() (*Config, error) {
-	_ = godotenv.Overload()
+	if f := getenv("RUNCOACH_ENV_FILE", ".env"); f != "none" {
+		_ = godotenv.Overload(f)
+	}
 
 	cfg := &Config{
 		Port:                 getenv("PORT", "8787"),
+		Host:                 getenv("HOST", "127.0.0.1"),
 		DatabaseURL:          os.Getenv("DATABASE_URL"),
 		GarminMCPCommand:     getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
 		OwnerEmail:           os.Getenv("RUNCOACH_OWNER_EMAIL"),

@@ -138,9 +138,10 @@ Each one is an ADR in [`docs/adr/`](docs/adr/); the terms are in [`CONTEXT.md`](
 Try the UI against canned answers first, with nothing else set up:
 
 ```bash
-cd backend && RUNCOACH_MOCK=1 go run ./cmd/server     # API on :8787, no login, no credentials, no database
-cd frontend && npm install && npm run dev               # UI on :5173
+RUNCOACH_MOCK=1 bin/dev     # API on :8787 and UI on http://localhost:5173; no login, credentials or database
 ```
+
+`bin/dev` runs the API (`go run`) and the UI (Vite) together in the foreground, like a Rails `bin/dev`; Ctrl-C stops both. Both listen on this computer only.
 
 Then for real, locally:
 
@@ -154,12 +155,12 @@ cd ../deploy/garmin-mcp
 docker compose build garmin-mcp                         # garmin_mcp at the pinned commit
 ./auth.sh                                               # sign in once (MFA); leaves the token bundle for the server
 
-cd ../../backend && go run ./cmd/server                 # imports the bundle on start: "garmin: connected"
+cd ../.. && bin/dev                                     # imports the bundle on start: "garmin: connected"
 ```
 
 Open the UI, sign in, and ask. When the bundle expires, about six months later, the chip says so; run `auth.sh` again and restart.
 
-> **On a managed work laptop**, run it exactly like this: `go run` and `npm run dev` from the repository. Don't build a server binary and start it from a script, or launch anything from `/tmp`; endpoint security tools treat a fresh unsigned program started from a temp folder as malware, and CrowdStrike did exactly that during this project. The Dockerfile is for the host (Render builds it), not for running locally. Values in `.env` win over the shell's environment, so a key exported for another tool cannot leak in.
+> **On a managed work laptop**, run it exactly like this: `bin/dev` from the repository. Don't build a server binary and start it from a script, or launch anything from `/tmp`; endpoint security tools treat a fresh unsigned program started from a temp folder as malware, and CrowdStrike did exactly that during this project. The Dockerfile is for the host (Render builds it), not for running locally. Values in `.env` win over the shell's environment, so a key exported for another tool cannot leak in.
 
 ### What a question costs
 

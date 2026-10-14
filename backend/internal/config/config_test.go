@@ -37,3 +37,26 @@ func TestAccountSettingsFromEnv(t *testing.T) {
 		t.Errorf("bad cap falls back to 10, got %d", cfg.MemberCap)
 	}
 }
+
+func TestListensOnLoopbackByDefault(t *testing.T) {
+	t.Setenv("HOST", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Host != "127.0.0.1" {
+		t.Fatalf("Host = %q, want 127.0.0.1 so the laptop never serves its network", cfg.Host)
+	}
+}
+
+func TestEnvFileCanBeSkipped(t *testing.T) {
+	t.Setenv("RUNCOACH_ENV_FILE", "none")
+	t.Setenv("RUNCOACH_INVITE_CODE", "from-the-shell")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.InviteCode != "from-the-shell" {
+		t.Fatalf("InviteCode = %q, want the shell's value", cfg.InviteCode)
+	}
+}

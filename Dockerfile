@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/runcoach ./cmd/ser
 # ---- 3. the runtime: python for garmin-mcp, plus the Go binaries ----
 FROM python:3.12-slim
 ARG GARMIN_MCP_REF=43b0c5b375fc1c7bd6bdbead69968dfabddec265
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 UV_SYSTEM_PYTHON=1 PORT=8080
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 UV_SYSTEM_PYTHON=1 PORT=8080 HOST=0.0.0.0
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*

@@ -3,10 +3,8 @@
 // with the invite code, sign-out, sign-in by email, and that the second runner
 // sees none of the first runner's chats, even by URL.
 //
-//   go build -o /tmp/runcoach-e2e ./backend/cmd/server
-//   cd /tmp && RUNCOACH_INVITE_CODE=e2e-invite RUNCOACH_OWNER_EMAIL=owner@example.com \
-//     RUNCOACH_OWNER_PASSWORD_HASH='<hash of owner-password>' GARMIN_MCP_COMMAND=false ./runcoach-e2e
-//   cd frontend && npm run dev
+//   RUNCOACH_ENV_FILE=none RUNCOACH_INVITE_CODE=e2e-invite RUNCOACH_OWNER_EMAIL=owner@example.com \
+//     RUNCOACH_OWNER_PASSWORD_HASH='<hash of owner-password>' GARMIN_MCP_COMMAND=false bin/dev
 //   cd frontend && npm run e2e:accounts
 
 import { chromium } from 'playwright'

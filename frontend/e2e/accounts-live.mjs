@@ -13,10 +13,10 @@
 // Costs one real question (about five cents on Sonnet 5.5) plus two triage
 // calls. Screenshots go to README_SHOTS (docs/screenshots by default).
 //
-// Start the server with `go run ./cmd/server` from backend/ (with its own
-// DATABASE_URL and invite code), not a compiled binary launched from /tmp by a
-// background script: on the work laptop CrowdStrike blocked that pattern as
-// malware on 14 Oct 2026. Better still, run this on a personal machine.
+// Start the server with bin/dev and a test env file in the repo's ignored tmp/
+// (its own DATABASE_URL and invite code): RUNCOACH_ENV_FILE=../tmp/accept.env
+// bin/dev. Never a compiled binary launched from /tmp by a script; on the work
+// laptop CrowdStrike blocked that as malware.
 //
 //   ACCEPT_BUNDLE_FILE=../backend/.garmin_bundle.b64 node e2e/accounts-live.mjs 1
 //   (restart the server)
@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 
 const APP = process.env.E2E_URL ?? 'http://localhost:5173/'
 const OUT = process.env.README_SHOTS ?? '../docs/screenshots'
-const STATE = '/tmp/runcoach-accept-state.json'
+const STATE = '../tmp/accept-state.json'
 const phase = process.argv[2]
 const INVITE = process.env.ACCEPT_INVITE ?? 'accept-invite'
 const OWNER = { email: 'owner@example.com', envPassword: 'owner-password-1', newPassword: 'owner-password-2' }

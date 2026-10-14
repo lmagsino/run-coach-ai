@@ -1,14 +1,13 @@
 // Screenshots of the chart scenarios at the design's three widths, against the
 // mock backend. Not a test: a way to look at the cards before merging.
 //
-//   cd backend && RUNCOACH_MOCK=1 go run ./cmd/server
-//   cd frontend && npm run dev
-//   cd frontend && E2E_SHOTS=/tmp/shots node e2e/shots.mjs
+//   RUNCOACH_MOCK=1 bin/dev
+//   cd frontend && node e2e/shots.mjs          # into the repo's ignored tmp/shots
 
 import { chromium } from 'playwright'
 
 const APP = process.env.E2E_URL ?? 'http://localhost:5173/'
-const SHOTS = process.env.E2E_SHOTS ?? '/tmp/runcoach-shots'
+const SHOTS = process.env.E2E_SHOTS ?? '../tmp/shots'
 const QUESTIONS = [
   ['scatter', 'Does my sleep actually affect my pace? Show me the pattern.'],
   ['bar', 'How did my last three training blocks compare?'],
