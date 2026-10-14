@@ -10,6 +10,7 @@
 // scenarios and the category map to deploy/garmin-mcp/tools.txt, so these keys
 // stay reachable; anything else falls back to a generic-but-honest line.
 const LABELS = {
+  'coach/triage': 'Working out what to read',
   'garmin/get_activities': 'Reading your recent Garmin activities',
   'garmin/get_activities_by_date': 'Reading your Garmin activities for the period',
   'garmin/get_activity': 'Opening that Garmin session',
@@ -34,7 +35,7 @@ const LABELS = {
 }
 
 // Sentence-cased source names for the fallback.
-const SOURCE_NAMES = { garmin: 'Garmin' }
+const SOURCE_NAMES = { garmin: 'Garmin', coach: 'the coach' }
 
 /**
  * @param {{source: string, tool: string}} step

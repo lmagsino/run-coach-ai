@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -145,6 +146,12 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
+	// Checked before the stream opens, so a missing key is a status code and
+	// never a screener call.
+	if !s.cfg.MockMode && s.cfg.AnthropicAPIKey == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "ANTHROPIC_API_KEY is not set"})
+		return
+	}
 	if _, busy := s.inflight.LoadOrStore(id, true); busy {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "a reply is already in progress"})
 		return
@@ -180,6 +187,19 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		}
 		result = &agent.Result{Answer: resp.Answer}
 	} else {
+		// Screen and scope first: an off-topic question is declined here, with
+		// no Garmin spawn and no coach call behind it.
+		sse.send("step", stepEvent{Source: agent.CoachSource, Tool: "triage", State: "active"})
+		triage := s.triage(ctx, priorTurns(prior), req.Question)
+		sse.send("step", stepEvent{Source: agent.CoachSource, Tool: "triage", State: "done"})
+		if !triage.OnTopic {
+			resp = chatResponse{Answer: triage.Decline}
+			sse.send("answer", resp)
+			result = &agent.Result{Answer: resp.Answer}
+			s.finishReply(ctx, id, chatID, resp, result)
+			return
+		}
+
 		ag, cleanup, _, err := s.prepareAgent(ctx, id)
 		if err != nil {
 			// The stream has already begun, so failures are in-band from here on.
@@ -201,7 +221,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 			}
 			sse.send("step", stepEvent{Source: ev.Source, Tool: ev.Tool, State: state})
 		})
-		result, err = ag.AnswerInConversation(ctx, priorTurns(prior), req.Question)
+		result, err = ag.AnswerScoped(ctx, priorTurns(prior), req.Question, triage.Scope)
 		s.recordOutcome(ctx, id, result, err)
 		if err != nil {
 			sse.send("error", map[string]string{"error": err.Error()})
@@ -210,14 +230,20 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		resp = chatResponse{Answer: result.Answer, Sources: result.Sources(), Chart: result.Chart}
 		sse.send("answer", resp)
 	}
+	s.finishReply(ctx, id, chatID, resp, result)
+}
 
+// finishReply saves the assistant turn and counts the usage.
+func (s *Server) finishReply(ctx context.Context, runnerID int64, chatID string, resp chatResponse, result *agent.Result) {
 	toolCalls, _ := json.Marshal(result.ToolCalls)
 	var chartJSON []byte
 	if resp.Chart != nil {
 		chartJSON, _ = json.Marshal(resp.Chart)
 	}
-	_, _ = s.store.AppendMessage(ctx, id, store.Message{
+	_, _ = s.store.AppendMessage(ctx, runnerID, store.Message{
 		ChatID: chatID, Role: "assistant", Content: resp.Answer, ToolCalls: toolCalls, Chart: chartJSON,
 	})
-	_ = s.store.AddUsage(ctx, id, time.Now(), usageOf(result))
+	_ = s.store.AddUsage(ctx, runnerID, time.Now(), usageOf(result))
+	log.Printf("reply: %d tool calls, chart=%t, tokens in=%d cached=%d out=%d",
+		len(result.ToolCalls), resp.Chart != nil, result.Usage.InputTokens, result.Usage.CachedInputTokens, result.Usage.OutputTokens)
 }

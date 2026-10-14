@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"time"
 
@@ -106,6 +107,16 @@ func (s *Server) recordOutcome(ctx context.Context, runnerID int64, result *agen
 	}
 }
 
+// triage screens and scopes a question with the small model. Its usage is
+// folded into the reply's; its failure is logged and the question goes on.
+func (s *Server) triage(ctx context.Context, prior []agent.PriorTurn, question string) agent.Triage {
+	t, err := agent.RunTriage(ctx, s.anthropic, anthropic.Model(s.cfg.AnthropicTriageModel), prior, question, time.Now())
+	if err != nil {
+		log.Printf("triage: %v (continuing unscoped)", err)
+	}
+	return t
+}
+
 // handleChat answers one question with no chat and no history: the
 // curl-friendly shape for the live pass. It still counts against the cap.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +142,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	triage := s.triage(ctx, nil, req.Question)
+	if !triage.OnTopic {
+		_ = s.store.AddUsage(ctx, id, time.Now(), store.Usage{Questions: 1})
+		writeJSON(w, http.StatusOK, chatResponse{Answer: triage.Decline})
+		return
+	}
+
 	ag, cleanup, status, err := s.prepareAgent(ctx, id)
 	if err != nil {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
@@ -138,7 +156,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cleanup()
 
-	result, err := ag.Answer(ctx, req.Question)
+	result, err := ag.AnswerScoped(ctx, nil, req.Question, triage.Scope)
 	s.recordOutcome(ctx, id, result, err)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

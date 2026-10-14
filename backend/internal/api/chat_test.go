@@ -359,15 +359,11 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	}
 
 	id := newChat(t, s, cookie)
+	// No API key: refused with a status before the stream opens, so nothing
+	// is spent on screening a question that cannot be answered.
 	rec = do(t, s, http.MethodPost, "/api/chats/"+id+"/stream", `{"question":"hi"}`, cookie)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("stream: %d", rec.Code)
-	}
-	// No API key: the stream opens and reports the problem in-band, the way
-	// the UI expects, and the question is still saved.
-	events := readSSE(t, rec.Body.String())
-	if len(events) != 1 || events[0].Name != "error" || !strings.Contains(events[0].Data["error"].(string), "ANTHROPIC_API_KEY") {
-		t.Errorf("events: %+v", events)
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "ANTHROPIC_API_KEY") {
+		t.Errorf("stream without a key: %d %s", rec.Code, rec.Body.String())
 	}
 
 	if rec := do(t, s, http.MethodPost, "/api/logout", "", cookie); rec.Code != http.StatusOK {

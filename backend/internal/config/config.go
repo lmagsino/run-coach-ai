@@ -40,6 +40,9 @@ type Config struct {
 	AnthropicAPIKey string
 	AnthropicModel  string // Claude model id for the agent loop
 	AnthropicEffort string // effort level sent with every request (ADR 0006)
+	// AnthropicTriageModel screens and scopes each question before anything
+	// is spent on it; a small model is enough.
+	AnthropicTriageModel string
 
 	// AllowedOrigin is a browser origin permitted by CORS. Empty, the default,
 	// disables CORS: the UI is served from the same origin in production and

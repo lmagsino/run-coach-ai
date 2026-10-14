@@ -25,7 +25,11 @@ const basePrompt = `You are RunCoach, a running coach who reads the runner's own
 	`Ground every claim in what the tools return — cite specific numbers and dates (distances, ` +
 	`paces, hours of sleep, HRV, load). If the tools return no data for a range, say so plainly; ` +
 	`never invent sessions or fall back on generic training advice. If a tool fails, say what ` +
-	`you could not read rather than guessing around it.`
+	`you could not read rather than guessing around it.
+
+Read only what the question needs. When a scope is given with the question, read exactly that and nothing more; two or three tool calls answer most questions.
+
+Be brief. The runner is learning to read their own data: answer in under 150 words, one or two short paragraphs, the conclusion first. Leave out numbers that do not change the conclusion. Offer more detail only if there is something worth digging into.`
 
 // answerFormat teaches the one piece of structure the UI needs that prose cannot
 // express: which single number deserves the pull-quote treatment (DESIGN.md §5).
@@ -69,7 +73,8 @@ const garminCategoryMap = `Finding the right Garmin tool (prefix garmin__):
 // tool_choice auto (forced choice is rejected on Opus 5.5), so the prompt is
 // what decides the chart rate (ADR 0005).
 const chartRules = `Charts (tool coach__show_chart):
-- Show at most one chart, and only when the answer is a pattern over time or a relationship between two measures. Never chart a single number; use the figure line for that.
+- The chart is the proof of what you say. Whenever your conclusion rests on five or more values over days, nights, runs or weeks, show them as the chart instead of listing them in the prose: weekly distance as bars, nightly sleep as bars, pace against sleep or HRV as a scatter, a trend as a line.
+- One chart at most. Never chart a single number; use the figure line for that.
 - Reshape the data yourself into the points: one point per run, night or week. Pace goes in seconds per kilometre with y_unit "min/km".
 - Two line series only when they share a unit. Two measures on different units are two charts; pick the one that carries the answer.
 - Call the chart tool before writing the prose, after the data tools. The prose must still stand on its own if the chart is dropped.`
@@ -101,9 +106,9 @@ type Source struct {
 // ToolCall records one tool invocation the agent made on Claude's behalf.
 // Callers use it to show which sources a given answer actually drew on.
 type ToolCall struct {
-	Source string
-	Tool   string
-	Failed bool
+	Source string `json:"source"`
+	Tool   string `json:"tool"`
+	Failed bool   `json:"failed"`
 }
 
 // EventKind identifies a point in the tool-calling loop worth reporting.
@@ -217,9 +222,23 @@ type PriorTurn struct {
 // exchanges are the ones a follow-up actually refers back to.
 const maxPriorTurns = 6
 
+// maxToolResultRunes caps what one tool result feeds back to the model. A
+// month of activities can run to tens of thousands of tokens; past this size
+// the result is cut and the model is told to ask for a narrower range.
+const maxToolResultRunes = 12000
+
 // Answer runs the tool-calling loop with no prior context.
 func (a *Agent) Answer(ctx context.Context, question string) (*Result, error) {
 	return a.AnswerInConversation(ctx, nil, question)
+}
+
+// AnswerScoped is AnswerInConversation with the triage scope attached to the
+// question, so the model reads exactly what the screener named.
+func (a *Agent) AnswerScoped(ctx context.Context, prior []PriorTurn, question, scope string) (*Result, error) {
+	if scope != "" {
+		question = question + "\n\n(Scope: read " + scope + ". Nothing else.)"
+	}
+	return a.AnswerInConversation(ctx, prior, question)
 }
 
 // AnswerInConversation runs the tool-calling loop with earlier exchanges
@@ -445,6 +464,10 @@ func callTool(ctx context.Context, ref toolRef, rawArgs string) (string, error) 
 		return fmt.Sprintf("tool error: %v", err), err
 	}
 	text := contentText(res)
+	if r := []rune(text); len(r) > maxToolResultRunes {
+		text = string(r[:maxToolResultRunes]) + fmt.Sprintf(
+			"\n[cut: %d more characters. Ask for a narrower range or a summary tool.]", len(r)-maxToolResultRunes)
+	}
 	if res.IsError || mcpclient.LooksLikeError(text) {
 		// The model still sees the text, so it can say what it could not
 		// read; the step and the Garmin state record the failure.
