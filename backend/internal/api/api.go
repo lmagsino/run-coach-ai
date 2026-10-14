@@ -33,6 +33,14 @@ type Server struct {
 	// two answers.
 	inflight sync.Map
 	logins   *loginLimiter
+
+	// garminLogins signs runners in to Garmin; pendingLogins holds the ones
+	// waiting for an MFA code, by runner id. garminAttempts counts every
+	// sign-in, not only failures: Garmin locks an account after a run of
+	// attempts, and that lock would land on the runner, not on us.
+	garminLogins   garmin.Logins
+	pendingLogins  sync.Map
+	garminAttempts *loginLimiter
 }
 
 // New builds a Server from configuration and an optional database pool. Without
@@ -44,6 +52,9 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 		pool:      pool,
 		anthropic: anthropic.NewClient(option.WithAPIKey(cfg.AnthropicAPIKey)),
 		logins:    newLoginLimiter(5, time.Minute),
+
+		garminLogins:   garmin.CommandLogins{Command: cfg.GarminLoginCommand},
+		garminAttempts: newLoginLimiter(5, 15*time.Minute),
 	}
 	if pool != nil {
 		s.store = store.NewPG(pool)
@@ -64,6 +75,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 	s.garmin = &garmin.LocalSpawn{Command: cfg.GarminMCPCommand, Store: s.store, Sealer: s.sealer}
 
 	if cfg.MockMode {
+		s.garminLogins = mockLogins{}
 		log.Printf("RUNCOACH_MOCK is set: canned answers, no login, no Garmin or Claude call")
 	} else {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -105,7 +117,7 @@ func (s *Server) bootstrapOwner(ctx context.Context) error {
 		}
 	}
 	if owner.PasswordHash == "" {
-		log.Printf("the owner has no password: set RUNCOACH_OWNER_PASSWORD_HASH or run cmd/set-password")
+		log.Printf("the owner has no password: set RUNCOACH_OWNER_PASSWORD or run cmd/set-password")
 	}
 	return nil
 }
@@ -124,6 +136,8 @@ func (s *Server) Routes() http.Handler {
 	api.HandleFunc("DELETE /api/account", s.handleAccountDelete)
 	api.HandleFunc("POST /api/garmin/tokens", s.handleGarminTokens)
 	api.HandleFunc("DELETE /api/garmin/tokens", s.handleGarminTokensDelete)
+	api.HandleFunc("POST /api/garmin/login", s.handleGarminLogin)
+	api.HandleFunc("POST /api/garmin/login/code", s.handleGarminLoginCode)
 	api.HandleFunc("GET /api/chats", s.handleChatsList)
 	api.HandleFunc("POST /api/chats", s.handleChatsCreate)
 	api.HandleFunc("PATCH /api/chats/{id}", s.handleChatRename)

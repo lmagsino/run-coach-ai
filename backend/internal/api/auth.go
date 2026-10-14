@@ -77,8 +77,8 @@ type garminState struct {
 }
 
 const (
-	fixNone        = "Garmin is not connected. Make a token bundle on your own computer and paste it in the Garmin section of your Account page."
-	fixExpired     = "Your Garmin tokens have expired. Make a new token bundle on your own computer and paste it in the Garmin section of your Account page."
+	fixNone        = "Garmin is not connected. Connect it in the Garmin section of your Account page."
+	fixExpired     = "Your Garmin connection has expired. Connect it again in the Garmin section of your Account page."
 	fixUnavailable = "Garmin did not answer. Try again in a few minutes; if it keeps failing, upstream may need an update."
 )
 
@@ -138,6 +138,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"usage":  map[string]any{"today": usage.Questions, "cap": runner.DailyQuestionCap},
 		"limit":  limit,
 		"mock":   s.cfg.MockMode,
+		// Whether the Garmin section offers the email and password form.
+		"garmin_login": s.loginEnabled(),
 	})
 }
 
@@ -215,6 +217,11 @@ func (s *Server) handleGarminTokens(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body must be JSON with a \"bundle\""})
 		return
 	}
+	s.connectBundle(w, r, body.Bundle)
+}
+
+// connectBundle probes a bundle, pasted or from a sign-in, and stores it sealed.
+func (s *Server) connectBundle(w http.ResponseWriter, r *http.Request, raw string) {
 	if s.cfg.MockMode {
 		writeJSON(w, http.StatusOK, map[string]any{"status": store.GarminConnected, "mock": true})
 		return
@@ -223,7 +230,7 @@ func (s *Server) handleGarminTokens(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "RUNCOACH_TOKEN_KEY is not set on the server"})
 		return
 	}
-	bundle, err := garmin.NormalizeBundle(body.Bundle)
+	bundle, err := garmin.NormalizeBundle(raw)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
@@ -239,7 +246,7 @@ func (s *Server) handleGarminTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	st, _ := s.garminStateFor(r, id)
-	writeJSON(w, http.StatusOK, map[string]any{"garmin": st, "garmin_name": name})
+	writeJSON(w, http.StatusOK, map[string]any{"status": store.GarminConnected, "garmin": st, "garmin_name": name})
 }
 
 func (s *Server) handleGarminTokensDelete(w http.ResponseWriter, r *http.Request) {

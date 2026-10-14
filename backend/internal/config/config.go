@@ -31,6 +31,11 @@ type Config struct {
 	// hosted image has the binary on PATH; local dev points it at the Docker
 	// image. The runner's token bundle is handed to it as GARMINTOKENS.
 	GarminMCPCommand string
+	// GarminLoginCommand runs the sign-in helper (deploy/garmin-mcp/login.py)
+	// that turns a runner's Garmin email and password into a token bundle. The
+	// images install it as runcoach-garmin-login; "off" hides the sign-in form
+	// and leaves only the pasted bundle.
+	GarminLoginCommand string
 
 	// OwnerEmail and OwnerPasswordHash bootstrap the owner's sign-in (ADR
 	// 0002, 0010): applied on start when the owner row has no email or no
@@ -97,6 +102,7 @@ func Load() (*Config, error) {
 		Host:                 getenv("HOST", "127.0.0.1"),
 		DatabaseURL:          os.Getenv("DATABASE_URL"),
 		GarminMCPCommand:     getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
+		GarminLoginCommand:   getenv("GARMIN_LOGIN_COMMAND", "runcoach-garmin-login"),
 		OwnerEmail:           os.Getenv("RUNCOACH_OWNER_EMAIL"),
 		OwnerPasswordHash:    os.Getenv("RUNCOACH_OWNER_PASSWORD_HASH"),
 		OwnerPassword:        os.Getenv("RUNCOACH_OWNER_PASSWORD"),

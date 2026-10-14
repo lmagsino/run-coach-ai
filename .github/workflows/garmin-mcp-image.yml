@@ -7,7 +7,7 @@ name: garmin-mcp image
 on:
   push:
     branches: [main]
-    paths: ["deploy/garmin-mcp/Dockerfile", ".github/workflows/garmin-mcp-image.yml"]
+    paths: ["deploy/garmin-mcp/Dockerfile", "deploy/garmin-mcp/login.py", ".github/workflows/garmin-mcp-image.yml"]
   workflow_dispatch:
 
 permissions:

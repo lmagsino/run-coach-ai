@@ -33,6 +33,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 RUN uv pip install --system "garmin-mcp @ git+https://github.com/Taxuspt/garmin_mcp@${GARMIN_MCP_REF}" \
  && apt-get purge -y git && apt-get autoremove -y
 COPY --from=server /out/runcoach /out/migrate /usr/local/bin/
+COPY --chmod=755 deploy/garmin-mcp/login.py /usr/local/bin/runcoach-garmin-login
 RUN useradd --create-home --uid 10001 runcoach
 USER runcoach
 WORKDIR /home/runcoach

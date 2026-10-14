@@ -28,6 +28,8 @@ RUN uv pip install --system \
 # `garmin-mcp-auth` writes OAuth tokens (valid ~6 months) here. Mount a volume
 # over this path so the interactive login survives container restarts —
 # otherwise every request would need credentials and an MFA code.
+# RunCoach's sign-in helper: email and password in, token bundle out (login.py).
+COPY --chmod=755 login.py /usr/local/bin/runcoach-garmin-login
 RUN mkdir -p /root/.garminconnect && chmod 700 /root/.garminconnect
 
 ENTRYPOINT ["garmin-mcp"]
