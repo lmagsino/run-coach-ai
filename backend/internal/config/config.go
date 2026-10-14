@@ -64,18 +64,19 @@ func Load() (*Config, error) {
 	_ = godotenv.Overload()
 
 	cfg := &Config{
-		Port:              getenv("PORT", "8080"),
-		DatabaseURL:       os.Getenv("DATABASE_URL"),
-		GarminMCPCommand:  getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
-		OwnerPasswordHash: os.Getenv("RUNCOACH_OWNER_PASSWORD_HASH"),
-		TokenKey:          os.Getenv("RUNCOACH_TOKEN_KEY"),
-		GarminBundle:      os.Getenv("RUNCOACH_GARMIN_BUNDLE"),
-		GarminBundleFile:  getenv("RUNCOACH_GARMIN_BUNDLE_FILE", ".garmin_bundle.b64"),
-		AnthropicAPIKey:   os.Getenv("ANTHROPIC_API_KEY"),
-		AnthropicModel:    getenv("ANTHROPIC_MODEL", "claude-opus-5-5"),
-		AnthropicEffort:   getenv("ANTHROPIC_EFFORT", "medium"),
-		AllowedOrigin:     os.Getenv("ALLOWED_ORIGIN"),
-		MockMode:          truthy(os.Getenv("RUNCOACH_MOCK")),
+		Port:                 getenv("PORT", "8080"),
+		DatabaseURL:          os.Getenv("DATABASE_URL"),
+		GarminMCPCommand:     getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
+		OwnerPasswordHash:    os.Getenv("RUNCOACH_OWNER_PASSWORD_HASH"),
+		TokenKey:             os.Getenv("RUNCOACH_TOKEN_KEY"),
+		GarminBundle:         os.Getenv("RUNCOACH_GARMIN_BUNDLE"),
+		GarminBundleFile:     getenv("RUNCOACH_GARMIN_BUNDLE_FILE", ".garmin_bundle.b64"),
+		AnthropicAPIKey:      os.Getenv("ANTHROPIC_API_KEY"),
+		AnthropicModel:       getenv("ANTHROPIC_MODEL", "claude-opus-5-5"),
+		AnthropicEffort:      getenv("ANTHROPIC_EFFORT", "medium"),
+		AnthropicTriageModel: getenv("ANTHROPIC_TRIAGE_MODEL", "claude-haiku-5-5"),
+		AllowedOrigin:        os.Getenv("ALLOWED_ORIGIN"),
+		MockMode:             truthy(os.Getenv("RUNCOACH_MOCK")),
 	}
 	return cfg, nil
 }
