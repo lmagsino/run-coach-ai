@@ -49,9 +49,9 @@ walkthroughs, and a build of the deploy image). Nothing is hosted yet.
    reads; [docs/live/phase-8.md](docs/live/phase-8.md)). Left: one Garmin sign-in from Render.
 6. **8.4:** live pass from the phone on the hosted app, measured (time, tokens, cost, charts).
 7. **8.5:** fix what the live pass finds; finish the README.
-8. Try the sign-in locally first: rebuild the local Garmin image (`cd deploy/garmin-mcp && docker compose build garmin-mcp`) so
-   it has the sign-in helper, and set `GARMIN_LOGIN_COMMAND` in `backend/.env` to
-   `docker run -i --rm --entrypoint runcoach-garmin-login run-coach-ai/garmin-mcp:latest`.
+8. **Leo:** try the sign-in locally first. Ready: the local Garmin image has the helper (rebuilt
+   14 Oct, error classes and MFA API checked) and `backend/.env` has `GARMIN_LOGIN_COMMAND`.
+   Run `bin/dev`, open the account page, connect with your Garmin email, password and code.
 
 ---
 
