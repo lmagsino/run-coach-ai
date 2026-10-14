@@ -83,6 +83,10 @@ func TestAccountDelete(t *testing.T) {
 	if rec := do(t, s, http.MethodGet, "/api/me", "", ana); rec.Code != http.StatusUnauthorized {
 		t.Errorf("session after delete: %d", rec.Code)
 	}
+	// Signing out with the dead session still succeeds.
+	if rec := do(t, s, http.MethodPost, "/api/logout", "", ana); rec.Code != http.StatusOK {
+		t.Errorf("logout after delete: %d", rec.Code)
+	}
 	if _, err := s.store.RunnerByID(context.Background(), id); err != store.ErrNotFound {
 		t.Errorf("runner after delete: %v", err)
 	}

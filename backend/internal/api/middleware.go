@@ -33,7 +33,9 @@ func runnerID(r *http.Request) int64 {
 func (s *Server) withSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/login" || r.URL.Path == "/api/signup" || r.URL.Path == "/api/healthz":
+		// Sign-out needs no session: it must succeed after an account is
+		// deleted or a session has expired, or the UI is stuck signed in.
+		case r.URL.Path == "/api/login" || r.URL.Path == "/api/signup" || r.URL.Path == "/api/logout" || r.URL.Path == "/api/healthz":
 			next.ServeHTTP(w, r)
 			return
 		case s.cfg.MockMode:
