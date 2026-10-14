@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -183,7 +184,7 @@ func (s *Server) checkCap(ctx context.Context, runnerID int64) (int, error) {
 		return http.StatusInternalServerError, err
 	}
 	if usage.Questions >= runner.DailyQuestionCap {
-		return http.StatusTooManyRequests, errors.New("daily cap reached; it resets at midnight UTC")
+		return http.StatusTooManyRequests, fmt.Errorf("You have used today's %d questions. They reset at midnight UTC.", runner.DailyQuestionCap)
 	}
 	// Every runner's questions are billed to one key, so the server has a
 	// ceiling of its own above the per-runner caps (ADR 0010).
@@ -194,7 +195,7 @@ func (s *Server) checkCap(ctx context.Context, runnerID int64) (int, error) {
 		}
 		if total.Questions >= s.cfg.GlobalDailyCap {
 			log.Printf("global daily cap reached (%d questions)", total.Questions)
-			return http.StatusTooManyRequests, errors.New("the coach has answered all the questions it can today; it resets at midnight UTC")
+			return http.StatusTooManyRequests, errors.New("The coach has answered all the questions it can today. It opens again at midnight UTC.")
 		}
 	}
 	return 0, nil

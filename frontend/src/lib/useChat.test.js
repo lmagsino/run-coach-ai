@@ -98,11 +98,11 @@ describe('charts', () => {
 describe('failures', () => {
   it('turns a thrown transport error into an error turn with its message', async () => {
     const transport = async () => {
-      throw new Error('daily cap reached; it resets at midnight UTC')
+      throw new Error("You have used today's 10 questions. They reset at midnight UTC.")
     }
     const { turns, send, busy } = await opened(transport)
     await send('q')
-    expect(turns.value[1]).toMatchObject({ status: 'error', error: 'daily cap reached; it resets at midnight UTC' })
+    expect(turns.value[1]).toMatchObject({ status: 'error', error: "You have used today's 10 questions. They reset at midnight UTC." })
     expect(busy.value).toBe(false)
   })
 

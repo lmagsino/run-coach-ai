@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -29,9 +30,25 @@ func TestCaps(t *testing.T) {
 
 	// Ana at her member cap of 10: refused with her own message.
 	_ = s.store.AddUsage(ctx, anaID, time.Now(), store.Usage{Questions: 10})
-	if code, body := ask(ana); code != http.StatusTooManyRequests || !strings.Contains(body, "daily cap reached") {
+	if code, body := ask(ana); code != http.StatusTooManyRequests || !strings.Contains(body, "used today's 10 questions") {
 		t.Errorf("Ana at her cap: %d %s", code, body)
 	}
+	// /me says so up front, with the same sentence.
+	var me struct {
+		Limit struct {
+			Reached bool
+			Message string
+		}
+	}
+	_ = json.Unmarshal(do(t, s, http.MethodGet, "/api/me", "", ana).Body.Bytes(), &me)
+	if !me.Limit.Reached || !strings.Contains(me.Limit.Message, "used today's 10 questions") {
+		t.Errorf("Ana's /me limit: %+v", me.Limit)
+	}
+	_ = json.Unmarshal(do(t, s, http.MethodGet, "/api/me", "", ben).Body.Bytes(), &me)
+	if me.Limit.Reached {
+		t.Errorf("Ben's /me says limit reached: %+v", me.Limit)
+	}
+
 	// Ben is under his own cap, so he gets past the caps (and stops at the
 	// missing key, which proves no cap refused him).
 	if code, body := ask(ben); code != http.StatusServiceUnavailable {

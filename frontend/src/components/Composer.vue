@@ -11,6 +11,10 @@ const props = defineProps({
   // The hint line promises real data. Under mock mode that promise is false, and
   // leaving it up would be the exact claim DESIGN.md §1.5 forbids.
   mock: { type: Boolean, default: false },
+  // Set when the runner (or the whole coach) is out of questions for today:
+  // the field is closed and this sentence replaces the hint, so nobody types
+  // a question only to have it refused.
+  limit: { type: String, default: '' },
 })
 
 const emit = defineEmits(['send'])
@@ -18,7 +22,7 @@ const draft = ref('')
 
 function submit() {
   const question = draft.value.trim()
-  if (!question || props.busy) return
+  if (!question || props.busy || props.limit) return
   emit('send', question)
   draft.value = ''
 }
@@ -37,8 +41,8 @@ function submit() {
       v-model="draft"
       type="text"
       autocomplete="off"
-      :disabled="busy"
-      placeholder="Ask about your training…"
+      :disabled="busy || !!limit"
+      :placeholder="limit ? 'No more questions today' : 'Ask about your training…'"
       class="min-w-0 flex-1 border-0 bg-transparent py-1.5 font-body text-[15.5px] text-ink outline-none placeholder:text-muted disabled:opacity-60"
     />
     <!-- Disabled only while busy, not on an empty draft: DESIGN.md §5 specifies a
@@ -46,7 +50,7 @@ function submit() {
          reads as broken. `submit` already ignores an empty question. -->
     <button
       type="submit"
-      :disabled="busy"
+      :disabled="busy || !!limit"
       aria-label="Send"
       class="flex size-[38px] flex-none cursor-pointer items-center justify-center rounded-xl bg-accent text-paper-hi transition-[background-color,transform] duration-150 ease-out hover:bg-accent-soft active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40"
     >
@@ -69,7 +73,10 @@ function submit() {
   <p
     class="mx-auto mt-2.5 max-w-measure text-center font-display text-[11.5px] tracking-[.03em] text-muted"
   >
-    <template v-if="mock">
+    <template v-if="limit">
+      {{ limit }}
+    </template>
+    <template v-else-if="mock">
       Mock mode — answers are canned, not from your data
     </template>
     <template v-else>

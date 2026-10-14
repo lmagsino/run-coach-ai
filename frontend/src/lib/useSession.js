@@ -45,6 +45,7 @@ export function useSession() {
   const usage = computed(() => me.value?.usage ?? { today: 0, cap: 0 })
   const mock = computed(() => Boolean(me.value?.mock))
   const runner = computed(() => me.value?.runner ?? null)
+  const limit = computed(() => me.value?.limit ?? { reached: false })
 
-  return { me, loaded, unauthorized, garmin, usage, mock, runner, load, login, signup, logout }
+  return { me, loaded, unauthorized, garmin, usage, mock, runner, limit, load, login, signup, logout }
 }

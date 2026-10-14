@@ -32,7 +32,20 @@ export function useChats() {
     chats.value = chats.value.filter((c) => c.id !== id)
   }
 
-  return { chats, loading, load, create, rename, remove }
+  // Shows a title before the server's list catches up.
+  function setLocalTitle(id, title) {
+    chats.value = chats.value.map((c) => (c.id === id && !c.title ? { ...c, title } : c))
+  }
+
+  return { chats, loading, load, create, rename, remove, setLocalTitle }
+}
+
+// The title the server gives a chat from its first question (titleFrom in
+// backend/internal/api/chats.go): spaces collapsed, cut at 60 characters.
+export function titleFrom(question) {
+  const t = String(question ?? '').split(/\s+/).filter(Boolean).join(' ')
+  const chars = [...t]
+  return chars.length > 60 ? chars.slice(0, 59).join('').trim() + '…' : t
 }
 
 // Groups chats by day for the sidebar: Today, Yesterday, then dates.

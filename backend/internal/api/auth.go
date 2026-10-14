@@ -124,12 +124,19 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	// The same check the stream applies, so the composer can say so before a
+	// chat is created rather than after a question is refused.
+	limit := map[string]any{"reached": false}
+	if _, err := s.checkCap(r.Context(), id); err != nil {
+		limit = map[string]any{"reached": true, "message": err.Error()}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"runner": map[string]any{
 			"id": id, "display_name": runner.DisplayName, "email": runner.Email, "kind": runner.Kind,
 		},
 		"garmin": st,
 		"usage":  map[string]any{"today": usage.Questions, "cap": runner.DailyQuestionCap},
+		"limit":  limit,
 		"mock":   s.cfg.MockMode,
 	})
 }

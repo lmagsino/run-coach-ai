@@ -9,6 +9,7 @@ import { api, streamChat } from '../lib/api.js'
 import { useChat } from '../lib/useChat.js'
 import { useChats } from '../lib/useChats.js'
 import { useSession } from '../lib/useSession.js'
+import { titleFrom } from '../lib/useChats.js'
 
 const props = defineProps({ id: { type: String, default: '' } })
 const router = useRouter()
@@ -42,6 +43,9 @@ const greeting = computed(() => {
 async function ask(question) {
   if (!props.id) {
     const chat = await chats.create()
+    // The server titles the chat from this question once it is saved; show
+    // the same title now rather than "New chat" for the whole reply.
+    chats.setLocalTitle(chat.id, titleFrom(question))
     // Open first, then move the URL: the route watcher's open() is then a
     // no-op and the question below streams into a thread nothing replaces.
     await open(chat.id)
@@ -56,6 +60,11 @@ async function ask(question) {
 <template>
   <ChatThread :turns="turns" :greeting="greeting" />
   <footer class="flex-none px-[18px] pt-3 pb-5 wide:px-7 wide:pt-3.5 wide:pb-[26px]">
-    <Composer :busy="busy" :mock="session.mock.value" @send="ask" />
+    <Composer
+      :busy="busy"
+      :mock="session.mock.value"
+      :limit="session.limit.value.reached ? session.limit.value.message : ''"
+      @send="ask"
+    />
   </footer>
 </template>

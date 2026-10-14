@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupByDay } from './useChats.js'
+import { groupByDay, titleFrom } from './useChats.js'
 
 describe('groupByDay', () => {
   it('labels today and yesterday and keeps list order inside a group', () => {
@@ -19,5 +19,14 @@ describe('groupByDay', () => {
 
   it('returns nothing for no chats', () => {
     expect(groupByDay([])).toEqual([])
+  })
+})
+
+describe('titleFrom', () => {
+  it('matches the server: spaces collapsed, cut at 60 characters', () => {
+    expect(titleFrom('  How   did I\nsleep? ')).toBe('How did I sleep?')
+    const long = 'a'.repeat(80)
+    expect(titleFrom(long)).toBe('a'.repeat(59) + '…')
+    expect([...titleFrom(long)].length).toBe(60)
   })
 })
