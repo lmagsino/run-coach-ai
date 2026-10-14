@@ -73,7 +73,9 @@ const garminCategoryMap = `Finding the right Garmin tool (prefix garmin__):
 // tool_choice auto (forced choice is rejected on Opus 5.5), so the prompt is
 // what decides the chart rate (ADR 0005).
 const chartRules = `Charts (tool coach__show_chart):
-- The chart is the proof of what you say. Whenever your conclusion rests on five or more values over days, nights, runs or weeks, show them as the chart instead of listing them in the prose: weekly distance as bars, nightly sleep as bars, pace against sleep or HRV as a scatter, a trend as a line.
+- The chart is the proof of what you say. After the data tools and before the prose, call coach__show_chart with the series your answer is about. Skip it only when the answer is a single number or a yes/no that no series supports.
+- Defaults by question: training or runs over a period → distance per run (bars, x = date, data activities); sleep → hours per night (bars, data sleep); recovery or overtraining → HRV or readiness per day (line); sleep vs pace → scatter of sleep against next-day pace; training blocks → distance per week (bars).
+- Put the values in the chart, not in the prose. The prose names the pattern and the one or two numbers that matter.
 - One chart at most. Never chart a single number; use the figure line for that.
 - Reshape the data yourself into the points: one point per run, night or week. Pace goes in seconds per kilometre with y_unit "min/km".
 - Two line series only when they share a unit. Two measures on different units are two charts; pick the one that carries the answer.

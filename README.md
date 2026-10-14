@@ -12,9 +12,9 @@ A chat over your own Garmin data. Ask in plain words; the coach reads your runs,
 ![Claude](https://img.shields.io/badge/Claude-Opus_5.5-D97757?logo=anthropic&logoColor=white)
 ![Hosting](https://img.shields.io/badge/hosting-free_tiers-2E5D4E)
 
-<img src="docs/screenshots/desktop-chart.png" alt="RunCoach answering 'Does my sleep actually affect my pace?' with a scatter chart of sleep against long-run pace" width="900">
+<img src="docs/screenshots/live-how-s-my-training.gif" alt="Asking RunCoach 'how's my training': the steps appear as it reads Garmin, then a bar chart of distance per run and a short reply" width="900">
 
-<sub>Answers in mock mode, shown while the live pass is pending. The UI labels mock data as such.</sub>
+<sub>A real question against my own Garmin account, recorded as it happened: 18 seconds, three Garmin tools, one chart, about five cents.</sub>
 
 </div>
 
@@ -32,7 +32,7 @@ RunCoach does. It hands Claude about eighty read-only Garmin tools and lets you 
 > _"I have a half marathon in 10 weeks. Am I on track, given how recovered I've been?"_
 > _"Why has my body battery been so low this week?"_
 
-Every reply is grounded in what the tools returned, cites the numbers and dates, and says plainly when the data is not there. No generic training advice, no dashboards. **The chat is the product.**
+Every reply is grounded in what the tools returned, cites the numbers and dates, and says plainly when the data is not there. Replies are short, the conclusion comes first, and when a conclusion rests on a series of values the chart carries them, as the proof. Off-topic questions are declined before they cost anything. No generic training advice, no dashboards. **The chat is the product.**
 
 It is built for one runner first (me), with every table and interface shaped so a second runner is additive later.
 
@@ -49,7 +49,7 @@ flowchart LR
     Laptop([Your laptop, every ~6 months]) -. "garmin-mcp-auth → paste the bundle" .-> UI
 ```
 
-The Go backend is a pure MCP client. For each reply it spawns the upstream [`Taxuspt/garmin_mcp`](https://github.com/Taxuspt/garmin_mcp) server, filters its tool list down to the reads, and runs Claude's tool loop over it. The frontend streams the steps as they happen, then the reply.
+The Go backend is a pure MCP client. A small model screens each question first: off-topic ones are declined on the spot, and on-topic ones get a concrete scope (which metrics, which dates). Then the backend spawns the upstream [`Taxuspt/garmin_mcp`](https://github.com/Taxuspt/garmin_mcp) server, filters its tool list down to the reads, and runs Claude's tool loop over exactly that scope. The frontend streams the steps as they happen, then the chart and the reply.
 
 ```mermaid
 sequenceDiagram
@@ -60,8 +60,10 @@ sequenceDiagram
     participant C as Claude
     U->>F: "Does my sleep affect my pace?"
     F->>G: POST /api/chats/:id/stream
+    G->>C: triage (Haiku): on topic? what to read?
+    C-->>G: scope: sleep and runs, last 8 weeks
     G->>M: spawn with your token bundle
-    G->>C: question + 77 tools (cached)
+    G->>C: question + scope + 77 tools (cached)
     C-->>G: call get_sleep_summary_range
     G->>M: tool call
     M-->>G: nights
@@ -76,15 +78,17 @@ sequenceDiagram
     G->>M: close
 ```
 
-<img src="docs/screenshots/desktop-steps.png" alt="The status steps shown while the coach reads Garmin data" width="900">
+<img src="docs/screenshots/live-how-s-my-training.png" alt="The finished reply to 'how's my training': a bar chart of distance per run for 1 to 14 October above two short paragraphs" width="900">
 
-<sub>While the coach works, the steps name what is being read. They come from real tool-call events, not from a script.</sub>
+<sub>The finished reply. The chart is drawn from the activities the coach read, the caption names the pattern, and "View data" shows the points.</sub>
 
-### One chart, when it earns its place
+### The chart is the proof
 
-The coach has a `show_chart` tool next to the Garmin ones. When an answer is a pattern over time or a relationship between two measures, it reshapes the data into points and calls it; the backend validates the spec (line, bar or scatter, 5 to 120 points, one axis, never a dual axis) and the browser draws it by hand in SVG. A single number gets a pull quote instead. Every chart has a "View data" table.
+The coach has a `show_chart` tool next to the Garmin ones. After reading the data and before writing, it reshapes the values its conclusion rests on into points and calls it; the backend validates the spec (line, bar or scatter, 5 to 120 points, one axis, never a dual axis) and the browser draws it by hand in SVG. The prose then names the pattern and the one or two numbers that matter. A single number gets a pull quote instead. Every chart has a "View data" table.
 
 <img src="docs/screenshots/desktop-bars.png" alt="Weekly distance bar chart with the current week drawn faint and the data table open" width="900">
+
+<sub>Mock mode, labelled as such: canned answers for the five example questions, so the UI can be built and demoed with no account at all.</sub>
 
 ### On the phone
 
@@ -95,7 +99,7 @@ The coach has a `show_chart` tool next to the Garmin ones. When an answer is a p
 
 ### Signing in, and connecting Garmin
 
-One password for the owner, remembered for 30 days. Garmin is connected with a token bundle you create on your own laptop with upstream's `garmin-mcp-auth` and paste in once; the server checks it with one profile read, stores it encrypted, and hands it to each spawned `garmin-mcp`. **The hosted server never signs in to Garmin itself.**
+One password for the owner, remembered for 30 days. Garmin is connected with a token bundle created once on your own laptop by upstream's `garmin-mcp-auth`; the server imports it on start (or from a paste, on a hosted copy), checks it with one profile read, stores it encrypted, and hands it to each spawned `garmin-mcp`. **The hosted server never signs in to Garmin itself.**
 
 <p>
 <img src="docs/screenshots/login.png" alt="Owner sign-in" width="440">
@@ -120,7 +124,7 @@ Each one is an ADR in [`docs/adr/`](docs/adr/); the terms are in [`CONTEXT.md`](
 | Layer | Choice |
 |---|---|
 | Backend | **Go 1.26**, stdlib `net/http`, `pgx/v5`, `golang-migrate`; one `store` package is the only data access |
-| Agent | **Claude Opus 5.5** via the Anthropic Go SDK: tool loop, explicit effort, prompt caching on the system prompt and tool block |
+| Agent | **Claude** via the Anthropic Go SDK: Haiku 5.5 screens and scopes, Sonnet or Opus 5.5 answers; tool loop, explicit effort, prompt caching on the system prompt and tool block |
 | Protocol | **MCP** via the official `modelcontextprotocol/go-sdk` |
 | Garmin | **`Taxuspt/garmin_mcp`** at a pinned commit, spawned per reply; 77 of its 155 tools exposed |
 | Frontend | **Vue 3 + Vite + Tailwind v4**, the "Field Notes" design in [`DESIGN.md`](DESIGN.md), hand-rolled SVG charts |
@@ -141,22 +145,27 @@ cd frontend && npm install && npm run dev               # UI on :5173
 Then for real, locally:
 
 ```bash
-cd deploy/garmin-mcp
-docker compose build garmin-mcp                         # garmin_mcp at the pinned commit
-docker compose --profile auth run --rm garmin-mcp-auth  # sign in once: email, password, MFA code
-
-cd ../../backend
-cp .env.example .env                                    # ANTHROPIC_API_KEY, GARMIN_MCP_COMMAND, then:
+cd backend
+cp .env.example .env                                    # ANTHROPIC_API_KEY, GARMIN_MCP_COMMAND, GARMIN_EMAIL/PASSWORD, then:
 go run ./cmd/token-key                                  #   RUNCOACH_TOKEN_KEY
-echo -n 'your password' | go run ./cmd/hash-password    #   RUNCOACH_OWNER_PASSWORD_HASH
-go run ./cmd/server
+echo -n 'your password' | go run ./cmd/hash-password    #   RUNCOACH_OWNER_PASSWORD_HASH (keep the quotes)
+
+cd ../deploy/garmin-mcp
+docker compose build garmin-mcp                         # garmin_mcp at the pinned commit
+./auth.sh                                               # sign in once (MFA); leaves the token bundle for the server
+
+cd ../../backend && go run ./cmd/server                 # imports the bundle on start: "garmin: connected"
 ```
 
-Open the UI, sign in, paste the token bundle on the Connection page (the page shows the one command that copies it out of the token volume), and ask. When the bundle expires, about six months later, the chip says so and you paste a new one.
+Open the UI, sign in, and ask. When the bundle expires, about six months later, the chip says so; run `auth.sh` again and restart. Values in `.env` win over the shell's environment, so a key exported for another tool cannot leak in.
+
+### What a question costs
+
+Pricing is per token, so every question has a price. Measured on the question above, on Sonnet 5.5: about 8k input tokens, 59k read from cache at a tenth of the price, 1k output, roughly five cents. The triage step on Haiku is a fraction of that, the daily cap is 30 questions, and `ANTHROPIC_MODEL` switches between Haiku, Sonnet and Opus with no other change.
 
 ### Deploy, free
 
-`Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and set `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_PASSWORD_HASH` and `RUNCOACH_TOKEN_KEY` in the dashboard. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
+`Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and set `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_PASSWORD_HASH`, `RUNCOACH_TOKEN_KEY` and `RUNCOACH_GARMIN_BUNDLE` (the line `bundle.sh` prints) in the dashboard. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
 
 ### Tests, with no credentials and no network
 
@@ -175,12 +184,13 @@ RUNCOACH_LIVE_MODEL_TESTS=1 go test ./internal/agent/ -run LiveModel -v   # cost
 ## Status
 
 - [x] Phases 1–4: design, Go backend, Garmin wiring, Vue chat UI, all against mocks
-- [x] Phase 5, Garmin core: Strava removed, read surface filtered in Go, Garmin-only prompt on Opus 5.5
+- [x] Phase 5, Garmin core: read surface filtered in Go, Garmin-only prompt with a category map
 - [x] Phase 6, charts: one validated chart card per reply
 - [x] Phase 7, shell: owner login, token paste, saved chats, sidebar and phone drawer, one origin
-- [ ] **Phase 8, deploy on free tiers and test live**: image and blueprint written; hosting, the Garmin sign-in, the live pass and Playwright in CI remain
+- [x] Live on my own account: the sign-in, the bundle import, triage, the first real replies with charts
+- [ ] **Phase 8, deploy on free tiers**: image and blueprint written; the Render + Neon setup, the full five-question pass and Playwright in CI remain
 
-Nothing has run against a live Garmin account yet. Phase 8 is where that happens, on purpose: the build phases needed no account, and everything gets tested together once. The plan and its checklist are in [`tasks/`](tasks/).
+The plan and its checklist are in [`tasks/`](tasks/).
 
 > `garmin_mcp` drives Garmin Connect's private endpoints with a personal login. There is no public API behind it, so it can break when Garmin changes them; the coach then says "Garmin unavailable" rather than guessing.
 
