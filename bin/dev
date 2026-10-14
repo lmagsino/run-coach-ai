@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Starts the API (go run) and the UI (Vite) together in the foreground, the way
+# ShiftCare's bin/dev does. Ctrl-C stops both. To restart, stop it and run it
+# again; never build a server binary and launch it from a script or /tmp.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+if [ ! -f backend/.env ] && [ -z "${RUNCOACH_MOCK:-}" ]; then
+  echo "backend/.env is missing: cp backend/.env.example backend/.env and fill it in," >&2
+  echo "or try the UI with canned answers: RUNCOACH_MOCK=1 bin/dev" >&2
+  exit 1
+fi
+[ -d frontend/node_modules ] || (cd frontend && npm install)
+
+trap 'kill 0' INT TERM EXIT
+
+(cd backend && go run ./cmd/server) &
+(cd frontend && npm run dev) &
+wait

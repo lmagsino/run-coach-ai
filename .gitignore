@@ -4,7 +4,8 @@
 !.env.example
 
 # Go
-/bin/
+/bin/*
+!/bin/dev
 /tmp/
 *.exe
 *.test
