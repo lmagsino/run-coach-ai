@@ -19,13 +19,9 @@ and, because compose points `GARMINTOKENS_BASE64` into the volume, the one-line 
 next to them as `garmin_tokens.b64`. The third command copies it to the clipboard for the
 app's Connection page.
 
-Two ways to run locally:
-
-- **Pasted bundle, like production:** `GARMIN_MCP_COMMAND=docker run -i --rm -e GARMINTOKENS
-  run-coach-ai/garmin-mcp:latest`. The backend passes the bundle as `GARMINTOKENS`.
-- **Named volume, no database:** `GARMIN_MCP_COMMAND=docker run -i --rm -v
-  run-coach-ai-garmin-tokens:/root/.garminconnect run-coach-ai/garmin-mcp:latest`. The
-  container finds the tokens in the volume.
+The backend runs this image with `GARMIN_MCP_COMMAND=docker run -i --rm -e GARMINTOKENS
+run-coach-ai/garmin-mcp:latest` and hands each reply the runner's own bundle as `GARMINTOKENS`.
+Do not mount the token volume into that command: every runner would read the tokens in it.
 
 Compose never runs the server itself; the backend spawns it per reply and it exits when the
 reply is done. The server receives an allowlisted environment and can never sign in to Garmin

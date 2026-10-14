@@ -51,8 +51,10 @@ const ProbeTool = "get_user_profile"
 // 0.3.2 treats any store longer than 512 characters as the token data itself
 // and parses it with json.loads, so the child gets the JSON that
 // garmin-mcp-auth base64-encoded, never the base64, and no file is written.
-// Without a stored bundle the command runs as configured, which is the
-// local-dev case of a named Docker volume holding the tokens.
+//
+// A runner without a stored bundle is not connected, and nothing is spawned:
+// a command that finds tokens on its own (a mounted volume, a home directory)
+// would otherwise answer one runner with another runner's Garmin data.
 type LocalSpawn struct {
 	Command string // program and args, whitespace separated
 	Store   store.Store
@@ -74,22 +76,21 @@ func (l *LocalSpawn) Connect(ctx context.Context, runnerID int64) (*mcp.ClientSe
 	if err != nil {
 		return nil, nil, err
 	}
-	var env []string
-	if conn != nil {
-		if l.Sealer == nil {
-			return nil, nil, errors.New("garmin: RUNCOACH_TOKEN_KEY is not set, cannot open the stored bundle")
-		}
-		bundle, err := l.Sealer.Open(conn.Blob)
-		if err != nil {
-			return nil, nil, err
-		}
-		tokens, err := TokenStore(string(bundle))
-		if err != nil {
-			return nil, nil, err
-		}
-		env = []string{"GARMINTOKENS=" + tokens}
+	if conn == nil {
+		return nil, nil, ErrNotConnected
 	}
-	session, err := l.client(env...).Connect(ctx)
+	if l.Sealer == nil {
+		return nil, nil, errors.New("garmin: RUNCOACH_TOKEN_KEY is not set, cannot open the stored bundle")
+	}
+	bundle, err := l.Sealer.Open(conn.Blob)
+	if err != nil {
+		return nil, nil, err
+	}
+	tokens, err := TokenStore(string(bundle))
+	if err != nil {
+		return nil, nil, err
+	}
+	session, err := l.client("GARMINTOKENS=" + tokens).Connect(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}

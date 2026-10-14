@@ -1,11 +1,16 @@
 package garmin
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lmagsino/run-coach-ai/backend/internal/store"
 )
 
 func TestNormalizeBundle(t *testing.T) {
@@ -85,5 +90,19 @@ func TestDisplayName(t *testing.T) {
 	}
 	if got := displayName(`not json`); got != "" {
 		t.Errorf("got %q", got)
+	}
+}
+
+// A runner with no stored bundle is not connected, and nothing is spawned:
+// the configured command could find another runner's tokens on its own.
+func TestConnectWithoutABundleSpawnsNothing(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "spawned")
+	l := &LocalSpawn{Command: "touch " + marker, Store: store.NewMemory()}
+	_, _, err := l.Connect(context.Background(), 1)
+	if !errors.Is(err, ErrNotConnected) {
+		t.Fatalf("got %v, want ErrNotConnected", err)
+	}
+	if _, statErr := os.Stat(marker); statErr == nil {
+		t.Error("the command ran for a runner with no bundle")
 	}
 }

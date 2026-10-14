@@ -4,8 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/lmagsino/run-coach-ai/backend/internal/store"
 )
@@ -81,6 +86,25 @@ func TestTwoRunnersAreIsolated(t *testing.T) {
 	}
 }
 
+// A runner who has not connected Garmin gets the fix sentence, never a reply
+// built from whatever tokens the configured command could reach.
+func TestRunnerWithoutBundleIsNotConnected(t *testing.T) {
+	s := openServer(t)
+	s.cfg.AnthropicAPIKey = "sk-test" // past the key check; no model call is reached
+	ben := signup(t, s, "ben@example.com", "Ben", "ben's long password", testInvite)
+	rec := do(t, s, http.MethodPost, "/api/chats", `{}`, ben)
+	var chat chatJSON
+	_ = json.Unmarshal(rec.Body.Bytes(), &chat)
+	// Triage needs a model; give it a scripted one that says on topic.
+	s.anthropic = scriptedTriage(t)
+	rec = do(t, s, http.MethodPost, "/api/chats/"+chat.ID+"/stream", `{"question":"how did I sleep?"}`, ben)
+	events := readSSE(t, rec.Body.String())
+	last := events[len(events)-1]
+	if last.Name != "error" || !strings.Contains(last.Data["error"].(string), "Garmin is not connected") {
+		t.Errorf("stream for a runner with no bundle ended with %+v", last)
+	}
+}
+
 // runnerOf resolves a session cookie to its runner id through the store.
 func runnerOf(t *testing.T, s *Server, c *http.Cookie) int64 {
 	t.Helper()
@@ -89,4 +113,18 @@ func runnerOf(t *testing.T, s *Server, c *http.Cookie) int64 {
 		t.Fatal(err)
 	}
 	return id
+}
+
+// scriptedTriage is a Messages API stand-in that answers every call with an
+// on-topic triage verdict, so a stream gets past screening without a network.
+func scriptedTriage(t *testing.T) anthropic.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"m","type":"message","role":"assistant","model":"x",
+			"content":[{"type":"text","text":"{\"on_topic\": true, \"scope\": \"sleep, last 7 days\"}"}],
+			"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return anthropic.NewClient(option.WithoutEnvironmentDefaults(), option.WithBaseURL(srv.URL), option.WithAPIKey("test"), option.WithMaxRetries(0))
 }
