@@ -2,7 +2,12 @@
 **/node_modules
 frontend/dist
 backend/internal/web/dist
-backend/.env
+# Secrets never enter a build, not even an intermediate stage: env files and
+# their backups, and the Garmin token bundle.
+**/.env
+**/.env.*
+!backend/.env.example
+**/*.b64
 docs
 design
 tasks

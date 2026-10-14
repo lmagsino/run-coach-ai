@@ -157,7 +157,9 @@ docker compose build garmin-mcp                         # garmin_mcp at the pinn
 cd ../../backend && go run ./cmd/server                 # imports the bundle on start: "garmin: connected"
 ```
 
-Open the UI, sign in, and ask. When the bundle expires, about six months later, the chip says so; run `auth.sh` again and restart. Values in `.env` win over the shell's environment, so a key exported for another tool cannot leak in.
+Open the UI, sign in, and ask. When the bundle expires, about six months later, the chip says so; run `auth.sh` again and restart.
+
+> **On a managed work laptop**, run it exactly like this: `go run` and `npm run dev` from the repository, in your own terminal. Don't build a binary to run locally or launch anything from `/tmp`; endpoint security tools treat a fresh unsigned program started from a temp folder as malware, and CrowdStrike did exactly that during this project. The Dockerfile is for the host (Render builds it), not for running locally. Values in `.env` win over the shell's environment, so a key exported for another tool cannot leak in.
 
 ### What a question costs
 

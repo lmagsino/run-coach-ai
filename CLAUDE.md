@@ -40,6 +40,14 @@ run-coach-ai/
 - One branch per phase (`phase-5-garmin-core`, `phase-6-charts`, `phase-7-shell`,
   `phase-8-deploy`), one PR to `main` each.
 - Git identity in this repo is the personal account (`leo.magsino819@gmail.com`).
+- **Run it from the repository, never as a built program.** Locally the server is
+  `go run ./cmd/server` in `backend/` and the UI is `npm run dev` in `frontend/`. Never
+  `go build` a binary to run it, and never put or launch anything in `/tmp`: on the work
+  laptop CrowdStrike blocked exactly that as malware on 14 Oct 2026 (a compiled server in
+  `/tmp` started by a background script). Don't run our own server inside Docker either:
+  Docker Desktop's Linux VM is a blind spot for the laptop's security tool, so it would look
+  like working around it. Docker is only for the third-party Garmin tool. The image build
+  for hosting happens on Render, not here.
 
 ## Backend (Go)
 
