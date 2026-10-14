@@ -29,7 +29,7 @@ RUN uv pip install --system \
 # over this path so the interactive login survives container restarts —
 # otherwise every request would need credentials and an MFA code.
 # RunCoach's sign-in helper: email and password in, token bundle out (login.py).
-COPY --chmod=755 login.py /usr/local/bin/runcoach-garmin-login
-RUN mkdir -p /root/.garminconnect && chmod 700 /root/.garminconnect
+COPY login.py /usr/local/bin/runcoach-garmin-login
+RUN chmod 755 /usr/local/bin/runcoach-garmin-login && mkdir -p /root/.garminconnect && chmod 700 /root/.garminconnect
 
 ENTRYPOINT ["garmin-mcp"]
