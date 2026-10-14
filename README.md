@@ -46,7 +46,7 @@ flowchart LR
     Go -->|"stdio MCP, per reply<br/>77 read-only tools"| MCP["garmin-mcp<br/><i>upstream, pinned</i>"]
     MCP --> Garmin[("Garmin Connect")]
     Go --> DB[("Postgres<br/>chats · encrypted token bundle")]
-    Laptop([Your laptop, every ~6 months]) -. "garmin-mcp-auth → paste the bundle" .-> UI
+    Runner([Every ~6 months]) -. "Garmin email + password once<br/>(or a pasted bundle)" .-> UI
 ```
 
 The Go backend is a pure MCP client. A small model screens each question first: off-topic ones are declined on the spot, and on-topic ones get a concrete scope (which metrics, which dates). Then the backend spawns the upstream [`Taxuspt/garmin_mcp`](https://github.com/Taxuspt/garmin_mcp) server, filters its tool list down to the reads, and runs Claude's tool loop over exactly that scope. The frontend streams the steps as they happen, then the chart and the reply.
@@ -99,11 +99,11 @@ The coach has a `show_chart` tool next to the Garmin ones. After reading the dat
 
 ### Signing in, and connecting Garmin
 
-Every runner signs in with an email and a password, remembered for 30 days. Garmin is connected with a token bundle created once on your own laptop by upstream's `garmin-mcp-auth`; the server imports it on start (or from a paste, on a hosted copy), checks it with one profile read, stores it encrypted, and hands it to each spawned `garmin-mcp`. **The hosted server never signs in to Garmin itself.**
+Every runner signs in to RunCoach with an email and a password, remembered for 30 days. Garmin is connected on the account page with the runner's Garmin email and password, plus the code Garmin sends if it asks for one. The server signs in once, keeps only the access Garmin grants (encrypted), and never stores the password. Garmin sometimes refuses sign-ins that come from servers, so the old way stays as the fallback: make a token bundle on your own computer with upstream's `garmin-mcp-auth` and paste it. Either way the server checks the connection with one profile read before storing it, and hands it to each spawned `garmin-mcp`.
 
 <p>
 <img src="docs/screenshots/login.png" alt="Sign-in with email and password" width="440">
-<img src="docs/screenshots/connection.png" alt="The Connection page where the Garmin token bundle is pasted" width="440">
+<img src="docs/screenshots/guide-2-connect.png" alt="The Garmin section of the account page: Garmin email and password, with Other ways to connect folded below" width="440">
 </p>
 
 ## Decisions worth knowing
@@ -113,11 +113,13 @@ Each one is an ADR in [`docs/adr/`](docs/adr/); the terms are in [`CONTEXT.md`](
 | | Decision | Why |
 |---|---|---|
 | [0001](docs/adr/0001-garmin-is-the-only-source.md) | Garmin is the only source | It already holds everything the training log had, plus recovery |
-| [0003](docs/adr/0003-hosted-server-never-signs-in-to-garmin.md) | The server never signs in to Garmin | Garmin throttles server sign-ins per IP; the spawned process gets an allowlisted environment so it cannot sign in even if asked |
+| [0003](docs/adr/0003-hosted-server-never-signs-in-to-garmin.md) | The spawned Garmin process never signs in | Garmin throttles server sign-ins per IP; the process gets an allowlisted environment, so it cannot sign in even if asked |
 | [0004](docs/adr/0004-upstream-garmin-mcp-unmodified-read-surface-filtered-in-go.md) | Upstream unmodified; the read surface is a deny pattern in Go | Upstream's own allowlist ignores unknown names silently; a pattern denies a new write tool by shape |
 | [0005](docs/adr/0005-charts-are-a-virtual-tool-validated-by-the-backend.md) | Charts are a tool the model calls and the backend validates | The model reshapes, the backend checks, the browser draws |
 | [0006](docs/adr/0006-opus-5-5-with-explicit-effort-and-prompt-caching.md) | Opus 5.5 with explicit effort and prompt caching | Cache reads cost the same as Sonnet; the premium lands only on uncached tokens |
 | [0007](docs/adr/0007-one-free-render-service-serves-api-and-ui-from-one-origin.md) | One free Render service serves API and UI from one origin, Neon for Postgres | Free only; one cookie, no CORS, tokens encrypted in the database because there is no disk |
+| [0010](docs/adr/0010-other-runners-by-invite-with-a-pasted-bundle.md) | Other runners join by invite, each with their own Garmin | Every question is billed to one API key, so sign-up is gated and capped |
+| [0011](docs/adr/0011-runners-may-sign-in-to-garmin-through-the-server.md) | Runners connect Garmin with their Garmin email and password; the paste is the fallback | A terminal command was too much to ask; the password is used once and never stored |
 
 ## Tech stack
 
@@ -147,18 +149,17 @@ Then for real, locally:
 
 ```bash
 cd backend
-cp .env.example .env                                    # ANTHROPIC_API_KEY, GARMIN_MCP_COMMAND, GARMIN_EMAIL/PASSWORD, then:
-go run ./cmd/token-key                                  #   RUNCOACH_TOKEN_KEY
-                                                        #   RUNCOACH_OWNER_EMAIL and RUNCOACH_OWNER_PASSWORD
+cp .env.example .env              # ANTHROPIC_API_KEY, RUNCOACH_OWNER_EMAIL and RUNCOACH_OWNER_PASSWORD,
+                                  # and the two Docker lines: GARMIN_MCP_COMMAND, GARMIN_LOGIN_COMMAND
+go run ./cmd/token-key            # paste into RUNCOACH_TOKEN_KEY
 
 cd ../deploy/garmin-mcp
-docker compose build garmin-mcp                         # garmin_mcp at the pinned commit
-./auth.sh                                               # sign in once (MFA); leaves the token bundle for the server
+docker compose build garmin-mcp   # garmin_mcp at the pinned commit, plus the sign-in helper
 
-cd ../.. && bin/dev                                     # imports the bundle on start: "garmin: connected"
+cd ../.. && bin/dev
 ```
 
-Open the UI, sign in, and ask. When the bundle expires, about six months later, the chip says so; run `auth.sh` again and restart.
+Open the UI, sign in, connect Garmin on the account page, and ask. When the connection expires, about six months later, the chip says so; connect again. (Or run `deploy/garmin-mcp/auth.sh` once in a terminal: it signs in to Garmin there and the server imports the bundle on its next start.)
 
 > **On a managed work laptop**, run it exactly like this: `bin/dev` from the repository. Don't build a server binary and start it from a script, or launch anything from `/tmp`; endpoint security tools treat a fresh unsigned program started from a temp folder as malware, and CrowdStrike did exactly that during this project. The Dockerfile is for the host (Render builds it), not for running locally. Values in `.env` win over the shell's environment, so a key exported for another tool cannot leak in.
 
@@ -168,7 +169,7 @@ Pricing is per token, so every question has a price. Measured on the question ab
 
 ## Guide: inviting other runners
 
-RunCoach takes other runners by invite. Each runner has their own account, chats and Garmin connection; their Garmin password never reaches the server; and every runner's questions are billed to the owner's API key, so caps keep the bill bounded ([ADR 0010](docs/adr/0010-other-runners-by-invite-with-a-pasted-bundle.md)). Everything below was run against a real server, a Postgres database and a real Garmin account before it was written down ([test report](docs/live/phase-9.md)).
+RunCoach takes other runners by invite. Each runner has their own account, chats and Garmin connection; their Garmin password is used once to sign in and never stored; and every runner's questions are billed to the owner's API key, so caps keep the bill bounded ([ADR 0010](docs/adr/0010-other-runners-by-invite-with-a-pasted-bundle.md)). The accounts flow below was run against a real server, a Postgres database and a real Garmin account before it was written down ([test report](docs/live/phase-9.md)). The Garmin email-and-password form is newer: so far it has been tested against a stand-in for Garmin, not Garmin itself.
 
 ### For the owner: open sign-up
 
@@ -233,15 +234,17 @@ Paste the line and press "Save and check": the server reads your Garmin profile 
 
 ## Deploy, free
 
-`Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and enter four values when Render asks: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_EMAIL` and `RUNCOACH_OWNER_PASSWORD`. Render generates `RUNCOACH_TOKEN_KEY` itself. Optionally add `RUNCOACH_GARMIN_BUNDLE` (the line `bundle.sh` prints) so your Garmin is connected from the first start. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
+`Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and enter four values when Render asks: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_EMAIL` and `RUNCOACH_OWNER_PASSWORD`. Render generates `RUNCOACH_TOKEN_KEY` itself. Optionally add `RUNCOACH_GARMIN_BUNDLE` (the line `bundle.sh` prints) so your Garmin is connected from the first start; otherwise connect it on the account page like any runner. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
 
 ## Tests, with no credentials and no network
 
 ```bash
 cd backend && go test ./...
 cd frontend && npm test
-cd frontend && npm run e2e      # browser walkthrough against a mock-mode backend
+RUNCOACH_MOCK=1 bin/dev & (cd frontend && npm run e2e)   # browser walkthrough, mock mode: chat, charts, Garmin sign-in
 ```
+
+GitHub runs all of these on every push, plus the accounts walkthrough (sign-up, sign-in, each runner seeing only their own chats) and a build of the deploy image.
 
 The agent's full tool loop runs against in-process stub MCP servers and a scripted stand-in for the Messages API: tool namespacing and routing, the read-surface filter, the cache and effort markers on every request, chart validation, and grounding scenarios on fabricated sleep and pace datasets. The store suite runs on an in-memory store always and on Postgres when `RUNCOACH_TEST_DATABASE_URL` is set. One opt-in test lets the real model choose its tools over the fake data:
 
@@ -256,10 +259,12 @@ RUNCOACH_LIVE_MODEL_TESTS=1 go test ./internal/agent/ -run LiveModel -v   # cost
 - [x] Phase 6, charts: one validated chart card per reply
 - [x] Phase 7, shell: owner login, token paste, saved chats, sidebar and phone drawer, one origin
 - [x] Live on my own account: the sign-in, the bundle import, triage, the first real replies with charts
-- [x] Phase 9, accounts: sign-up by invite, email sign-in, account page, Garmin per runner, member and global caps
-- [ ] **Phase 8, deploy on free tiers**: image and blueprint written; the Render + Neon setup, the full five-question pass and Playwright in CI remain
+- [x] Phase 9, accounts: sign-up by invite, email sign-in, account page, Garmin per runner, member and global caps ([live test report](docs/live/phase-9.md))
+- [x] Garmin sign-in on the account page with email and password, the token paste kept as fallback (ADR 0011)
+- [x] Browser walkthroughs and a build of the deploy image in CI on every push
+- [ ] **Phase 8, deploy on free tiers**: image and blueprint ready; the Render + Neon setup, a first Garmin sign-in from Render, and the five-question pass from the phone remain
 
-The plan and its checklist are in [`tasks/`](tasks/).
+Where things stand and what is pending: [`PROGRESS.md`](PROGRESS.md). The plan and its checklist are in [`tasks/`](tasks/).
 
 > `garmin_mcp` drives Garmin Connect's private endpoints with a personal login. There is no public API behind it, so it can break when Garmin changes them; the coach then says "Garmin unavailable" rather than guessing.
 
