@@ -138,7 +138,7 @@ Each one is an ADR in [`docs/adr/`](docs/adr/); the terms are in [`CONTEXT.md`](
 Try the UI against canned answers first, with nothing else set up:
 
 ```bash
-cd backend && RUNCOACH_MOCK=1 go run ./cmd/server     # API on :8080, no login, no credentials, no database
+cd backend && RUNCOACH_MOCK=1 go run ./cmd/server     # API on :8787, no login, no credentials, no database
 cd frontend && npm install && npm run dev               # UI on :5173
 ```
 

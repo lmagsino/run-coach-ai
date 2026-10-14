@@ -145,8 +145,8 @@ cd backend
 cp .env.example .env            # first time; ANTHROPIC_API_KEY, GARMIN_MCP_COMMAND
 RUNCOACH_MOCK=1 go run ./cmd/server   # canned answers, no credentials, no database
 go run ./cmd/server             # live: needs the key and the authenticated Garmin image
-curl localhost:8080/healthz     # {"status":"ok","db":"off"} without DATABASE_URL
-curl -s localhost:8080/chat -d '{"question":"how did I sleep this week?"}'
+curl localhost:8787/healthz     # {"status":"ok","db":"off"} without DATABASE_URL
+curl -s localhost:8787/api/chat -d '{"question":"how did I sleep this week?"}'
 ```
 
 ### Garmin MCP container (local dev)
@@ -167,7 +167,7 @@ the real model choose its tools over the fake data.
 ## Frontend (Vue 3)
 
 **Location:** `frontend/`. Vite + Vue 3.5 + Tailwind v4. `npm run dev` on :5173, `npm test`
-(vitest), `npm run build`. The backend must be running on :8080; mock mode needs nothing else.
+(vitest), `npm run build`. The backend must be running on :8787; mock mode needs nothing else.
 
 ### Design system
 `DESIGN.md` is the source of truth and `design/mockup.html` the canonical screen. Palette
@@ -193,7 +193,7 @@ paste box. Answer text is parsed, not JSON (`lib/answer.js`); step labels in
 See `backend/.env.example`. Summary:
 | Var | Purpose |
 |---|---|
-| `PORT` | HTTP port (default 8080) |
+| `PORT` | HTTP port (default 8787 locally; hosts set their own). Not 8080: on the work laptop a security agent stalls PATCH requests to localhost:8080 |
 | `DATABASE_URL` | Postgres connection string. **Optional** until Phase 7; unset ⇒ `/healthz` says `db: off` |
 | `GARMIN_MCP_COMMAND` | Command to launch garmin-mcp (default `garmin-mcp`; local dev: the Docker image). The stored bundle is passed as `GARMINTOKENS` |
 | `RUNCOACH_OWNER_PASSWORD_HASH` | bcrypt hash for the owner login (`cmd/hash-password`). Unset ⇒ nobody can log in |

@@ -12,7 +12,10 @@ import (
 
 // Config holds all runtime configuration for the backend.
 type Config struct {
-	Port string // HTTP listen port
+	// Port is the HTTP listen port. Hosts set PORT themselves; the local
+	// default avoids 8080, where a security agent on the work laptop stalls
+	// PATCH requests to localhost while letting every other method through.
+	Port string
 
 	// DatabaseURL is optional until chats are persisted (Phase 7, ADR 0008).
 	// Empty means the server runs without a database and /healthz reports it.
@@ -75,7 +78,7 @@ func Load() (*Config, error) {
 	_ = godotenv.Overload()
 
 	cfg := &Config{
-		Port:                 getenv("PORT", "8080"),
+		Port:                 getenv("PORT", "8787"),
 		DatabaseURL:          os.Getenv("DATABASE_URL"),
 		GarminMCPCommand:     getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
 		OwnerEmail:           os.Getenv("RUNCOACH_OWNER_EMAIL"),
