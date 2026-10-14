@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lmagsino/run-coach-ai/backend/internal/auth"
 	"github.com/lmagsino/run-coach-ai/backend/internal/config"
@@ -41,7 +42,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 	s := &Server{
 		cfg:       cfg,
 		pool:      pool,
-		anthropic: anthropic.NewClient(), // reads ANTHROPIC_API_KEY from env
+		anthropic: anthropic.NewClient(option.WithAPIKey(cfg.AnthropicAPIKey)),
 		auth:      auth.OwnerPassword{Hash: []byte(cfg.OwnerPasswordHash), OwnerID: 1},
 		logins:    newLoginLimiter(5, time.Minute),
 	}

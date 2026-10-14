@@ -52,11 +52,13 @@ type Config struct {
 	MockMode bool
 }
 
-// Load reads configuration from the environment. It first attempts to load a
-// .env file (ignored if absent, e.g. in production), then reads variables.
+// Load reads configuration from the environment. A .env file in the working
+// directory is loaded first and wins over the shell: the laptop's shell exports
+// keys for other tools (an old ANTHROPIC_API_KEY once sent every request to the
+// wrong organisation), and a value written into the project's .env is the
+// intent. Hosts have no .env, so there the environment is all there is.
 func Load() (*Config, error) {
-	// Best-effort: a missing .env is fine (vars may come from the real env).
-	_ = godotenv.Load()
+	_ = godotenv.Overload()
 
 	cfg := &Config{
 		Port:              getenv("PORT", "8080"),
