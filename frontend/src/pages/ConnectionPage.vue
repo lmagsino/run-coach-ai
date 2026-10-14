@@ -75,6 +75,10 @@ async function remove() {
       </div>
 
       <h2 class="mt-7 mb-2 font-display text-[15px] font-semibold">Connect, or refresh expired tokens</h2>
+      <p class="mb-3 text-[14px] leading-[1.6] text-muted">
+        On the laptop that runs the server, <code>deploy/garmin-mcp/auth.sh</code> does all of this and the
+        server connects on its next start. The paste below is for a hosted copy, or a refresh from your phone.
+      </p>
       <ol class="mb-4 list-decimal pl-5 text-[14.5px] leading-[1.6] text-ink">
         <li>
           On your laptop, sign in once (email, password, MFA):

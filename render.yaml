@@ -24,3 +24,7 @@ services:
         sync: false
       - key: GARMIN_MCP_COMMAND
         value: garmin-mcp
+      # Optional: the one-line bundle from deploy/garmin-mcp/bundle.sh, so the
+      # host is connected on start without a paste. Rotate it when it expires.
+      - key: RUNCOACH_GARMIN_BUNDLE
+        sync: false

@@ -30,6 +30,13 @@ type Config struct {
 	// random bytes; `go run ./cmd/token-key` prints one.
 	TokenKey string
 
+	// GarminBundle and GarminBundleFile let the server import the token bundle
+	// on start instead of waiting for a paste: the inline value on a host, or
+	// the file deploy/garmin-mcp/auth.sh writes on the laptop. The paste page
+	// stays as the fallback. Empty or missing means nothing is imported.
+	GarminBundle     string
+	GarminBundleFile string
+
 	AnthropicAPIKey string
 	AnthropicModel  string // Claude model id for the agent loop
 	AnthropicEffort string // effort level sent with every request (ADR 0006)
@@ -57,6 +64,8 @@ func Load() (*Config, error) {
 		GarminMCPCommand:  getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
 		OwnerPasswordHash: os.Getenv("RUNCOACH_OWNER_PASSWORD_HASH"),
 		TokenKey:          os.Getenv("RUNCOACH_TOKEN_KEY"),
+		GarminBundle:      os.Getenv("RUNCOACH_GARMIN_BUNDLE"),
+		GarminBundleFile:  getenv("RUNCOACH_GARMIN_BUNDLE_FILE", ".garmin_bundle.b64"),
 		AnthropicAPIKey:   os.Getenv("ANTHROPIC_API_KEY"),
 		AnthropicModel:    getenv("ANTHROPIC_MODEL", "claude-opus-5-5"),
 		AnthropicEffort:   getenv("ANTHROPIC_EFFORT", "medium"),

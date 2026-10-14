@@ -1,9 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/lmagsino/run-coach-ai/backend/internal/auth"
@@ -118,6 +123,71 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// importGarminBundle stores the bundle from RUNCOACH_GARMIN_BUNDLE or the
+// bundle file for the owner on start, so a laptop that ran auth.sh (or a host
+// with the env var set) is connected without a paste. A bundle identical to
+// the stored one is left alone; anything else is probed and replaces it.
+func (s *Server) importGarminBundle(ctx context.Context) error {
+	raw := s.cfg.GarminBundle
+	source := "RUNCOACH_GARMIN_BUNDLE"
+	if raw == "" && s.cfg.GarminBundleFile != "" {
+		b, err := os.ReadFile(s.cfg.GarminBundleFile)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		raw, source = string(b), s.cfg.GarminBundleFile
+	}
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	if s.sealer == nil {
+		return errors.New("a bundle is configured but RUNCOACH_TOKEN_KEY is not set")
+	}
+	bundle, err := garmin.NormalizeBundle(raw)
+	if err != nil {
+		return err
+	}
+	owner, err := s.store.Owner(ctx)
+	if err != nil {
+		return err
+	}
+	if conn, err := s.store.GarminConnection(ctx, owner.ID); err == nil && conn != nil && conn.Status == store.GarminConnected {
+		if stored, err := s.sealer.Open(conn.Blob); err == nil && string(stored) == bundle {
+			log.Printf("garmin bundle from %s already stored", source)
+			return nil
+		}
+	}
+	name, err := s.garmin.Probe(ctx, bundle)
+	if err != nil {
+		return fmt.Errorf("bundle from %s rejected: %w", source, err)
+	}
+	if err := s.storeBundle(ctx, owner.ID, bundle, name); err != nil {
+		return err
+	}
+	log.Printf("garmin bundle from %s imported (connected as %q)", source, name)
+	return nil
+}
+
+// storeBundle seals and upserts a probed bundle for a runner.
+func (s *Server) storeBundle(ctx context.Context, runnerID int64, bundle, name string) error {
+	blob, err := s.sealer.Seal([]byte(bundle))
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	exp := now.Add(garmin.TokenLifetime)
+	if err := s.store.UpsertGarminConnection(ctx, store.GarminConnection{
+		RunnerID: runnerID, Kind: store.ConnectionLocalTokens, Blob: blob, KeyVersion: 1,
+		Status: store.GarminConnected, ImportedAt: now, LastOKAt: &now, ExpiresEstAt: &exp,
+	}); err != nil {
+		return err
+	}
+	return s.store.Audit(ctx, runnerID, "tokens_imported", map[string]any{"garmin_name": name})
+}
+
 // handleGarminTokens takes the pasted bundle, probes it, and stores it sealed.
 func (s *Server) handleGarminTokens(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -145,23 +215,11 @@ func (s *Server) handleGarminTokens(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "the bundle did not work: " + err.Error()})
 		return
 	}
-	blob, err := s.sealer.Seal([]byte(bundle))
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
 	id := runnerID(r)
-	now := time.Now()
-	exp := now.Add(garmin.TokenLifetime)
-	err = s.store.UpsertGarminConnection(r.Context(), store.GarminConnection{
-		RunnerID: id, Kind: store.ConnectionLocalTokens, Blob: blob, KeyVersion: 1,
-		Status: store.GarminConnected, ImportedAt: now, LastOKAt: &now, ExpiresEstAt: &exp,
-	})
-	if err != nil {
+	if err := s.storeBundle(r.Context(), id, bundle, name); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	_ = s.store.Audit(r.Context(), id, "tokens_imported", map[string]any{"garmin_name": name})
 	st, _ := s.garminStateFor(r, id)
 	writeJSON(w, http.StatusOK, map[string]any{"garmin": st, "garmin_name": name})
 }

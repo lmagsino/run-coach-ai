@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"sync"
@@ -63,8 +64,15 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 
 	if cfg.MockMode {
 		log.Printf("RUNCOACH_MOCK is set: canned answers, no login, no Garmin or Claude call")
-	} else if cfg.OwnerPasswordHash == "" {
-		log.Printf("RUNCOACH_OWNER_PASSWORD_HASH is not set: nobody can log in")
+	} else {
+		if cfg.OwnerPasswordHash == "" {
+			log.Printf("RUNCOACH_OWNER_PASSWORD_HASH is not set: nobody can log in")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		if err := s.importGarminBundle(ctx); err != nil {
+			log.Printf("garmin bundle import: %v", err)
+		}
 	}
 	return s
 }

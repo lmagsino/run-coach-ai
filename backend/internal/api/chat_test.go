@@ -2,15 +2,22 @@ package api
 
 import (
 	"bufio"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/lmagsino/run-coach-ai/backend/internal/auth"
 	"github.com/lmagsino/run-coach-ai/backend/internal/config"
+	"github.com/lmagsino/run-coach-ai/backend/internal/crypto"
+	"github.com/lmagsino/run-coach-ai/backend/internal/garmin"
 	"github.com/lmagsino/run-coach-ai/backend/internal/store"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // These tests cover mock mode and the transport plumbing: no database, no MCP
@@ -392,6 +399,66 @@ func TestGarminTokensRejectsGarbage(t *testing.T) {
 	rec = do(t, s, http.MethodPost, "/api/garmin/tokens", `{"bundle":"abc"}`, cookie)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("garbage bundle: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// stubSource stands in for the Garmin spawn: it accepts one bundle.
+type stubSource struct{ accept string }
+
+func (st stubSource) Connect(context.Context, int64) (*mcp.ClientSession, func(), error) {
+	return nil, nil, garmin.ErrUnavailable
+}
+func (st stubSource) Probe(_ context.Context, bundle string) (string, error) {
+	if bundle == st.accept {
+		return "Leo", nil
+	}
+	return "", garmin.ErrAuth
+}
+
+// A bundle file written by the laptop sign-in connects the owner on start,
+// with no paste; a bundle the probe rejects stores nothing; the same bundle
+// again is left alone.
+func TestGarminBundleImportedOnStart(t *testing.T) {
+	good := base64.StdEncoding.EncodeToString([]byte(`{"di_token":"` + strings.Repeat("x", 600) + `","di_refresh_token":"r","di_client_id":"c"}`))
+	bad := base64.StdEncoding.EncodeToString([]byte(`{"di_token":"` + strings.Repeat("y", 600) + `","di_refresh_token":"r","di_client_id":"c"}`))
+	dir := t.TempDir()
+	file := filepath.Join(dir, "bundle.b64")
+	if err := os.WriteFile(file, []byte(good+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := crypto.NewKey()
+	hash, _ := auth.HashPassword("pw")
+	cfg := &config.Config{OwnerPasswordHash: hash, TokenKey: key, GarminBundleFile: file, GarminMCPCommand: "false"}
+
+	s := New(cfg, nil) // the real spawn fails, so the import logs and stores nothing
+	s.garmin = stubSource{accept: good}
+	if err := s.importGarminBundle(context.Background()); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	conn, _ := s.store.GarminConnection(context.Background(), 1)
+	if conn == nil || conn.Status != store.GarminConnected {
+		t.Fatalf("not connected after import: %+v", conn)
+	}
+	first := conn.ImportedAt
+	if err := s.importGarminBundle(context.Background()); err != nil {
+		t.Fatalf("second import: %v", err)
+	}
+	if conn, _ = s.store.GarminConnection(context.Background(), 1); !conn.ImportedAt.Equal(first) {
+		t.Error("an identical bundle was re-imported")
+	}
+
+	s.cfg.GarminBundle = bad
+	if err := s.importGarminBundle(context.Background()); err == nil {
+		t.Error("a rejected bundle imported without error")
+	}
+	if conn, _ = s.store.GarminConnection(context.Background(), 1); !conn.ImportedAt.Equal(first) {
+		t.Error("a rejected bundle replaced the stored one")
+	}
+
+	// A missing file is simply nothing to import.
+	s.cfg.GarminBundle, s.cfg.GarminBundleFile = "", filepath.Join(dir, "absent")
+	if err := s.importGarminBundle(context.Background()); err != nil {
+		t.Errorf("missing file: %v", err)
 	}
 }
 

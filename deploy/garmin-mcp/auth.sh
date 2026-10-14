@@ -5,4 +5,4 @@ set -e
 cd "$(dirname "$0")"
 docker compose --profile auth run --rm garmin-mcp-auth
 echo
-echo "Now copy the bundle to the clipboard with: $(dirname "$0")/bundle.sh"
+exec "$(dirname "$0")/bundle.sh"

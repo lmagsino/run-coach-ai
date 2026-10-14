@@ -27,3 +27,6 @@ vendor/
 # Dockerfile; only the placeholder index.html is committed.
 backend/internal/web/dist/*
 !backend/internal/web/dist/index.html
+
+# The Garmin token bundle the laptop sign-in leaves for the server to import.
+backend/.garmin_bundle.b64
