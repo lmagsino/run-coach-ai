@@ -55,7 +55,8 @@ func (s *Server) handleGarminLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	id := runnerID(r)
 	key := "garmin:" + strconv.FormatInt(id, 10)
-	if s.garminAttempts.blocked(key, time.Now()) {
+	// Mock mode never reaches Garmin, so there is no account to protect.
+	if !s.cfg.MockMode && s.garminAttempts.blocked(key, time.Now()) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{
 			"error": "Too many Garmin sign-ins in a short time. Wait 15 minutes, so Garmin does not lock your account.",
 			"kind":  "too_many",

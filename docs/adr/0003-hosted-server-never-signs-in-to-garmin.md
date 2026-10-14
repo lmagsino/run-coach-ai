@@ -4,6 +4,9 @@ date: 2026-10-13
 ---
 # The hosted server never signs in to Garmin
 
+> Amended by [ADR 0011](0011-runners-may-sign-in-to-garmin-through-the-server.md): runners may now
+> sign in through the server, with the token paste below kept as the fallback.
+
 Garmin's SSO sits behind a Cloudflare edge that rate-limits server-side sign-ins per IP
 (roughly 20 failures an hour earns a day-long block), the mobile login flow has returned
 429 for everyone since March 2026, and a free host's shared egress IP is the first to be

@@ -30,6 +30,12 @@ import { readFileSync, writeFileSync } from 'node:fs'
 const APP = process.env.E2E_URL ?? 'http://localhost:5173/'
 const OUT = process.env.README_SHOTS ?? '../docs/screenshots'
 const STATE = '../tmp/accept-state.json'
+
+// The paste sits under "Other ways to connect" when the server offers sign-in.
+async function openPaste(page) {
+  const other = page.locator('#garmin details')
+  if ((await other.count()) && !(await other.evaluate((d) => d.open))) await other.locator('summary').click()
+}
 const phase = process.argv[2]
 const INVITE = process.env.ACCEPT_INVITE ?? 'accept-invite'
 const OWNER = { email: 'owner@example.com', envPassword: 'owner-password-1', newPassword: 'owner-password-2' }
@@ -111,6 +117,7 @@ if (phase === '1') {
   await ana.waitForTimeout(600)
   await ana.screenshot({ path: `${OUT}/guide-2-connect.png` })
   const bundle = readFileSync(process.env.ACCEPT_BUNDLE_FILE ?? '../backend/.garmin_bundle.b64', 'utf8').trim()
+  await openPaste(ana)
   await ana.fill('#bundle', bundle)
   await ana.getByRole('button', { name: 'Save and check' }).click()
   await ana.waitForFunction(() => /garmin connected/i.test(document.querySelector('#garmin')?.innerText ?? ''), null, { timeout: 90000 })
@@ -203,6 +210,7 @@ if (phase === 'cap') {
   await signIn(ben, BEN, BEN.password)
   await signedIn(ben)
   await ben.goto(url('/account#garmin'), { waitUntil: 'networkidle' })
+  await openPaste(ben)
   await ben.fill('#bundle', readFileSync(process.env.ACCEPT_BUNDLE_FILE ?? '../backend/.garmin_bundle.b64', 'utf8').trim())
   await ben.getByRole('button', { name: 'Save and check' }).click()
   await ben.waitForFunction(() => /garmin connected/i.test(document.querySelector('#garmin')?.innerText ?? ''), null, { timeout: 90000 })

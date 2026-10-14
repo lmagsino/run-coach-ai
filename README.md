@@ -182,7 +182,13 @@ RunCoach takes other runners by invite. Each runner has their own account, chats
 
 <img src="docs/screenshots/guide-1-signup.png" alt="The sign-up form: name, email, password and invite code" width="720">
 
-**2. Make a Garmin token bundle on your own computer.** The account page shows two ways, each with a copy button. Both ask for your Garmin email, password and MFA code on your machine, and print one line of text, the bundle. Nothing to clone.
+**2. Connect Garmin.** On the account page, enter your Garmin Connect email and password and press "Connect Garmin". If Garmin sends you a code, type it in within a few minutes. The server signs in once, keeps only the access Garmin grants (encrypted), and never stores the password ([ADR 0011](docs/adr/0011-runners-may-sign-in-to-garmin-through-the-server.md)). The chip turns to "Garmin connected", good for about six months.
+
+<img src="docs/screenshots/guide-2-connect.png" alt="The Garmin section of the account page: the Garmin email and password form, with Other ways to connect folded below" width="900">
+
+<img src="docs/screenshots/guide-phone-garmin.png" alt="The same form on a phone" width="300">
+
+**If Garmin refuses the sign-in.** Garmin sometimes turns away sign-ins that come from a server. The page then says so and opens "Other ways to connect": make a token bundle on your own computer, where Garmin asks for your email, password and code, and paste the one line it prints. Nothing to clone.
 
 ```bash
 # with uv (https://docs.astral.sh/uv)
@@ -195,11 +201,9 @@ docker run -it --rm -v "$PWD:/out" -e GARMINTOKENS_BASE64=/out/garmin_tokens.b64
 cat garmin_tokens.b64 | pbcopy && rm garmin_tokens.b64
 ```
 
-<img src="docs/screenshots/guide-2-connect.png" alt="The Garmin section of the account page: not connected, the uv and Docker commands, and the paste box" width="900">
+Paste the line and press "Save and check": the server reads your Garmin profile once to prove it works and stores it encrypted.
 
-**3. Paste the bundle and press "Save and check".** The server reads your Garmin profile once to prove the bundle works, stores it encrypted, and the chip turns to "Garmin connected" with the date the tokens expire, about six months out.
-
-<img src="docs/screenshots/guide-3-connected.png" alt="Garmin connected, tokens expire about 14 Apr 2027" width="900">
+<img src="docs/screenshots/guide-3-connected.png" alt="Garmin connected, with the date the connection lasts until" width="900">
 
 **4. Ask.** Replies come from your own Garmin data only, with the numbers and dates they rest on. Your chats are yours: another runner gets "not found" even with the link.
 
@@ -216,7 +220,7 @@ cat garmin_tokens.b64 | pbcopy && rm garmin_tokens.b64
   <img src="docs/screenshots/guide-cap.png" alt="At the daily cap the composer is closed: 'You have used today's 10 questions. They reset at midnight UTC.'" width="900">
 
 - **Name and password** change on the account page. Changing the password signs the runner out on every other device.
-- **Expired Garmin tokens.** The chip says "tokens expired"; make a new bundle (step 2) and paste it again.
+- **Expired Garmin connection.** After about six months the chip says so; connect again (step 2).
 - **Deleting an account** takes the runner's chats, usage and Garmin bundle with it, at once and for good. It asks for the password and a second confirmation. The owner's account cannot be deleted.
 
   <img src="docs/screenshots/guide-delete.png" alt="Delete account, with the password typed and the second confirmation button" width="900">

@@ -22,17 +22,16 @@ walkthroughs, and a build of the deploy image). Nothing is hosted yet.
   image on every push.
 - **Shorter Render setup:** Render generates `RUNCOACH_TOKEN_KEY`; the owner password goes in as
   `RUNCOACH_OWNER_PASSWORD` (no hash step). Four values to enter.
-- **Garmin sign-in, backend half:** a runner can connect Garmin with their Garmin email and
-  password (and MFA code) instead of a terminal command. `POST /api/garmin/login` and
-  `/api/garmin/login/code`, helper `deploy/garmin-mcp/login.py`, password used once and never
-  stored, 5 attempts per 15 minutes, paste stays as the fallback. Tested with fakes only.
+- **Garmin sign-in (ADR 0011):** a runner connects Garmin on the account page with their Garmin
+  email and password, plus the MFA code if Garmin sends one, instead of a terminal command.
+  `POST /api/garmin/login` and `/api/garmin/login/code`, helper `deploy/garmin-mcp/login.py`,
+  password used once and never stored, 5 attempts per 15 minutes. The token paste is folded
+  under "Other ways to connect" and opens by itself when Garmin refuses the server. The mock
+  walkthrough drives it (password `wrong` is refused, code `123456` works).
 
 ### In progress
-- **Garmin sign-in, account page:** the email/password/MFA form in
-  `frontend/src/components/GarminSection.vue`, shown when `/api/me` says `garmin_login: true`,
-  with the uv/Docker/paste steps moved under "Other ways to connect". Then: the mock walkthrough
-  step (mock code is `123456`, password `wrong` is refused), ADR 0011 (amends ADR 0003: the
-  server may now sign in once with a password it never keeps), and the README guide's step 2.
+- Nothing half-built. The Garmin sign-in (backend and account page, ADR 0011) is done and tested
+  against fakes and the mock server; it has not met real Garmin yet (Pending 4 and 8).
 
 ### Pending
 1. **Leo:** rotate the Anthropic API key (it was pasted in chat), change the owner password
@@ -42,14 +41,15 @@ walkthroughs, and a build of the deploy image). Nothing is hosted yet.
    optionally `RUNCOACH_GARMIN_BUNDLE` (contents of `backend/.garmin_bundle.b64`).
 3. **Decide:** hosted model. `render.yaml` says `claude-opus-5-5`; locally Sonnet 5.5 is used,
    and the credit is about $4.60.
-4. **The big unknown:** whether Garmin lets Render's servers sign in at all (it has blocked
-   data-centre logins since March 2026). Test once with Leo's account after deploying. If it is
-   blocked, the page falls back to the token paste and nothing else changes.
+4. **The big unknown:** whether Garmin lets Render's servers sign in at all. ADR 0003 recorded
+   that Garmin's Cloudflare edge throttles server sign-ins per IP and that free hosts share
+   egress IPs, so expect it may be refused. Try once with Leo's account after deploying. If it
+   is refused, the page opens the token paste and nothing else changes.
 5. **8.3:** opt-in live Garmin tool check (`RUNCOACH_LIVE_GARMIN_TESTS=1`): proves the read-only
    filter against the real tool list; results into `docs/live/phase-8.md`. Not written yet.
 6. **8.4:** live pass from the phone on the hosted app, measured (time, tokens, cost, charts).
 7. **8.5:** fix what the live pass finds; finish the README.
-8. Rebuild the local Garmin image (`cd deploy/garmin-mcp && docker compose build garmin-mcp`) so
+8. Try the sign-in locally first: rebuild the local Garmin image (`cd deploy/garmin-mcp && docker compose build garmin-mcp`) so
    it has the sign-in helper, and set `GARMIN_LOGIN_COMMAND` in `backend/.env` to
    `docker run -i --rm --entrypoint runcoach-garmin-login run-coach-ai/garmin-mcp:latest`.
 

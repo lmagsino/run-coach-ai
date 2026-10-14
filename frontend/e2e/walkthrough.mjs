@@ -42,9 +42,11 @@ async function launch() {
 const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
 
+let expectRefusals = false
 page.on('console', (m) => {
   if (m.type() !== 'error') return
   if (m.text().includes('ERR_FAILED')) return // the failure injections below
+  if (expectRefusals && m.text().includes('status of 422')) return // the refused Garmin sign-ins below
   fail(`console error: ${m.text()}`)
 })
 page.on('pageerror', (e) => fail(`pageerror: ${e.message}`))
@@ -169,8 +171,36 @@ await shot('walkthrough-error')
 
 // ------------------------------------------------------------ account page
 await page.goto(new URL('/account', APP).toString(), { waitUntil: 'networkidle' })
-const conn = await page.locator('main').innerText()
-if (!/garmin-mcp-auth/.test(conn) || !/garmin_tokens\.b64/.test(conn)) fail('account page does not show the laptop commands')
+// Garmin sign-in, against mock mode's stand-in: "wrong" is a refused
+// password, any other asks for a code, and 123456 is the right code.
+const garminStatus = () => page.locator('#garmin [role="status"]').first().innerText()
+async function garminSignIn(pw) {
+  await page.fill('#garmin-email', 'runner@example.com')
+  await page.fill('#garmin-password', pw)
+  await page.getByRole('button', { name: 'Connect Garmin' }).click()
+}
+expectRefusals = true
+await garminSignIn('wrong')
+await page.waitForSelector('#garmin [role="status"]')
+if (!/did not accept that email and password/.test(await garminStatus())) fail('a refused Garmin password was not explained')
+if (await page.inputValue('#garmin-password')) fail('the Garmin password stayed in the form after sending')
+await garminSignIn('right')
+await page.waitForSelector('#garmin-code')
+await page.fill('#garmin-code', '000000')
+await page.getByRole('button', { name: 'Connect', exact: true }).click()
+await page.waitForSelector('#garmin-email')
+if (!/did not accept that code/.test(await garminStatus())) fail('a wrong Garmin code was not explained')
+await garminSignIn('right')
+await page.waitForSelector('#garmin-code')
+await shot('walkthrough-garmin-code')
+await page.fill('#garmin-code', '123456')
+await page.getByRole('button', { name: 'Connect', exact: true }).click()
+await page.waitForFunction(() => /Connected\./.test(document.querySelector('#garmin')?.innerText ?? ''))
+expectRefusals = false
+console.log('Garmin sign-in: refused password, wrong code, then connected with the code')
+// The token paste is still there, folded under "Other ways to connect".
+const conn = await page.locator('#garmin').textContent()
+if (!/garmin-mcp-auth/.test(conn) || !/garmin_tokens\.b64/.test(conn)) fail('account page lost the laptop commands')
 if ((await page.locator('#bundle').count()) !== 1) fail('account page has no paste box')
 
 // ------------------------------------------------------------------ layout

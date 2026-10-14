@@ -1,31 +1,16 @@
 <script setup>
-// The Garmin section of the account page (ADR 0003): the connection's state,
-// how to make a token bundle, and the box it is pasted into. The sign-in
-// itself happens on the runner's own computer; the server probes the bundle,
-// stores it encrypted, and the chip changes.
+// The Garmin section of the account page: the connection's state and how to
+// connect. Where the server allows it, the runner signs in with their Garmin
+// email and password (and the MFA code Garmin sends); the password is sent
+// once and kept nowhere (ADR 0011). The token paste stays below as the way
+// in when Garmin refuses a sign-in from the server.
 import { computed, ref } from 'vue'
 import GarminChip from './GarminChip.vue'
-import { DOCKER_COMMANDS, UV_COMMANDS } from '../lib/garmin.js'
+import GarminTokenPaste from './GarminTokenPaste.vue'
 import { api } from '../lib/api.js'
 import { useSession } from '../lib/useSession.js'
 
 const session = useSession()
-const isOwner = computed(() => session.runner.value?.kind === 'owner')
-const copied = ref('')
-async function copy(text) {
-  try {
-    await navigator.clipboard.writeText(text)
-    copied.value = text
-    setTimeout(() => (copied.value = ''), 1500)
-  } catch {
-    // The command is on screen to select by hand.
-  }
-}
-const bundle = ref('')
-const busy = ref(false)
-const message = ref('')
-const failed = ref(false)
-
 const garmin = computed(() => session.garmin.value)
 const expires = computed(() => {
   const at = garmin.value.expires_est_at
@@ -33,22 +18,77 @@ const expires = computed(() => {
   return new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 })
 
-async function save() {
-  if (!bundle.value.trim() || busy.value) return
+const step = ref('credentials') // or 'code' while Garmin waits for the MFA code
+const email = ref('')
+const password = ref('')
+const code = ref('')
+const busy = ref(false)
+const message = ref('')
+const failed = ref(false)
+const otherWays = ref(false)
+
+const input =
+  'w-full rounded-lg border border-line bg-paper-hi px-3 py-2 font-body text-[14px] text-ink outline-none focus:border-accent'
+const button =
+  'cursor-pointer rounded-lg bg-accent px-4 py-2 font-display text-[13px] font-semibold text-paper-hi hover:bg-accent-soft disabled:opacity-50'
+
+async function connected(res) {
+  step.value = 'credentials'
+  code.value = ''
+  failed.value = false
+  message.value = res?.garmin_name ? `Connected as ${res.garmin_name}.` : 'Connected.'
+  await session.load()
+}
+
+function refused(err) {
+  failed.value = true
+  message.value = err?.message || 'Signing in to Garmin failed.'
+  // Garmin turned the server away, or the server cannot sign in: the paste
+  // works from the runner's own computer, so open it.
+  if (['blocked', 'unavailable', 'failed'].includes(err?.kind)) otherWays.value = true
+  if (err?.kind === 'bad_code' || err?.kind === 'expired') step.value = 'credentials'
+}
+
+async function signIn() {
+  if (busy.value || !email.value.trim() || !password.value) return
   busy.value = true
   message.value = ''
-  failed.value = false
+  const pw = password.value
+  password.value = '' // not kept in the page any longer than the request
   try {
-    const res = await api.garminTokens(bundle.value)
-    bundle.value = ''
-    message.value = res.garmin_name ? `Connected as ${res.garmin_name}.` : 'Connected.'
-    await session.load()
+    const res = await api.garminLogin(email.value.trim(), pw)
+    if (res.status === 'needs_mfa') {
+      step.value = 'code'
+      failed.value = false
+      message.value = ''
+    } else {
+      await connected(res)
+    }
   } catch (err) {
-    failed.value = true
-    message.value = err?.message || 'Could not save the bundle.'
+    refused(err)
   } finally {
     busy.value = false
   }
+}
+
+async function sendCode() {
+  if (busy.value || !code.value.trim()) return
+  busy.value = true
+  message.value = ''
+  try {
+    await connected(await api.garminLoginCode(code.value.trim()))
+  } catch (err) {
+    code.value = ''
+    refused(err)
+  } finally {
+    busy.value = false
+  }
+}
+
+function startOver() {
+  step.value = 'credentials'
+  code.value = ''
+  message.value = ''
 }
 
 async function remove() {
@@ -60,7 +100,7 @@ async function remove() {
     await session.load()
   } catch (err) {
     failed.value = true
-    message.value = err?.message || 'Could not remove the bundle.'
+    message.value = err?.message || 'Could not disconnect Garmin.'
   } finally {
     busy.value = false
   }
@@ -69,81 +109,55 @@ async function remove() {
 
 <template>
   <section id="garmin">
-      <h2 class="m-0 font-display text-[17px] font-semibold -tracking-[.01em]">Garmin</h2>
-      <p class="mt-1 mb-4 text-[14.5px] leading-[1.6] text-muted">
-        The coach reads your data with tokens you create on your own laptop. It never signs in to Garmin itself.
-      </p>
+    <h2 class="m-0 font-display text-[17px] font-semibold -tracking-[.01em]">Garmin</h2>
+    <p class="mt-1 mb-4 text-[14.5px] leading-[1.6] text-muted">
+      The coach reads your Garmin data, and only reads it. It never changes anything in your Garmin account.
+    </p>
 
-      <div class="rounded-2xl border border-line bg-paper-hi px-5 py-4">
+    <div class="rounded-2xl border border-line bg-paper-hi px-5 py-4">
+      <div class="flex items-start justify-between gap-3">
         <GarminChip :status="garmin.status" :mock="session.mock.value" />
-        <p v-if="garmin.status === 'connected' && expires" class="m-0 mt-1 text-[13px] text-muted">
-          Tokens expire about {{ expires }}.
-        </p>
-        <p v-if="garmin.fix" class="m-0 mt-1 text-[13px] text-muted">{{ garmin.fix }}</p>
-        <p v-if="garmin.last_error && garmin.status !== 'connected'" class="m-0 mt-1 text-[12.5px] text-muted">
-          Last error: {{ garmin.last_error }}
-        </p>
-      </div>
-
-      <h3 class="mt-6 mb-2 font-display text-[14.5px] font-semibold">Connect, or refresh expired tokens</h3>
-      <p class="mb-3 text-[14px] leading-[1.6] text-muted">
-        Make a token bundle once on your own computer: it asks for your Garmin email, password and MFA code
-        there, and gives you one line to paste below. Your password never reaches this site. Tokens last about
-        six months; when they expire, do it again.
-      </p>
-
-      <p class="mb-1 text-[14px] font-medium text-ink">With uv <span class="font-normal text-muted">(recommended, nothing to install globally)</span></p>
-      <div v-for="cmd in UV_COMMANDS" :key="cmd" class="mb-1.5 flex items-start gap-2">
-        <pre class="m-0 min-w-0 flex-1 overflow-x-auto rounded-lg border border-line bg-paper px-3 py-2 font-mono text-[12px]">{{ cmd }}</pre>
-        <button type="button" class="flex-none cursor-pointer pt-2 font-display text-[11px] tracking-[.08em] text-muted uppercase hover:text-ink" @click="copy(cmd)">
-          {{ copied === cmd ? 'Copied' : 'Copy' }}
+        <button
+          v-if="garmin.status !== 'none' && !session.mock.value"
+          type="button"
+          :disabled="busy"
+          class="flex-none cursor-pointer font-display text-[11px] tracking-[.08em] text-muted uppercase hover:text-ink disabled:opacity-50"
+          @click="remove"
+        >
+          Disconnect
         </button>
       </div>
-      <p class="mt-0 mb-3 text-[12.5px] text-muted">
-        No uv yet? <a class="text-accent" href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener">Install it</a> with one command.
-        On Windows, replace <code>| pbcopy</code> with <code>| clip</code>; on Linux, open the file and copy the line.
+      <p v-if="garmin.status === 'connected' && expires" class="m-0 mt-1 text-[13px] text-muted">
+        Connected until about {{ expires }}; then sign in again.
       </p>
-
-      <p class="mb-1 text-[14px] font-medium text-ink">Or with Docker</p>
-      <div v-for="cmd in DOCKER_COMMANDS" :key="cmd" class="mb-1.5 flex items-start gap-2">
-        <pre class="m-0 min-w-0 flex-1 overflow-x-auto rounded-lg border border-line bg-paper px-3 py-2 font-mono text-[12px]">{{ cmd }}</pre>
-        <button type="button" class="flex-none cursor-pointer pt-2 font-display text-[11px] tracking-[.08em] text-muted uppercase hover:text-ink" @click="copy(cmd)">
-          {{ copied === cmd ? 'Copied' : 'Copy' }}
-        </button>
-      </div>
-
-      <p v-if="isOwner" class="mt-3 mb-3 text-[13px] leading-[1.6] text-muted">
-        On the laptop that runs this server, <code>deploy/garmin-mcp/auth.sh</code> does it in one step and the
-        server imports the bundle on its next start.
+      <!-- "none"'s fix sends the runner here, so it is the form below on this page. -->
+      <p v-if="garmin.fix && garmin.status !== 'none'" class="m-0 mt-1 text-[13px] text-muted">{{ garmin.fix }}</p>
+      <p v-if="garmin.last_error && garmin.status !== 'connected'" class="m-0 mt-1 text-[12.5px] text-muted">
+        Last error: {{ garmin.last_error }}
       </p>
+    </div>
 
-      <p class="mt-4 mb-1.5 text-[14px] font-medium text-ink">Then paste the line here</p>
-      <form @submit.prevent="save">
-        <label for="bundle" class="sr-only">Token bundle</label>
-        <textarea
-          id="bundle"
-          v-model="bundle"
-          rows="4"
-          spellcheck="false"
-          placeholder="Paste the token bundle here"
-          class="w-full rounded-xl border border-line bg-paper-hi px-3 py-2 font-mono text-[12.5px] text-ink outline-none placeholder:font-body placeholder:text-muted focus:border-accent"
-        />
-        <div class="mt-2 flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            :disabled="busy || !bundle.trim()"
-            class="cursor-pointer rounded-lg bg-accent px-4 py-2 font-display text-[13px] font-semibold text-paper-hi hover:bg-accent-soft disabled:opacity-50"
-          >
-            Save and check
-          </button>
-          <button
-            v-if="garmin.status !== 'none' && !session.mock.value"
-            type="button"
-            :disabled="busy"
-            class="cursor-pointer rounded-lg border border-line px-4 py-2 font-display text-[13px] font-semibold text-muted hover:text-ink disabled:opacity-50"
-            @click="remove"
-          >
-            Remove
+    <template v-if="session.garminLogin.value">
+      <h3 class="mt-6 mb-1 font-display text-[14.5px] font-semibold">
+        {{ garmin.status === 'connected' ? 'Connect again' : 'Connect Garmin' }}
+      </h3>
+
+      <form v-if="step === 'credentials'" class="grid gap-3" autocomplete="off" @submit.prevent="signIn">
+        <p class="m-0 text-[14px] leading-[1.6] text-muted">
+          Sign in with your Garmin Connect account. Your password goes to Garmin once and is never stored; the
+          coach keeps only the access Garmin grants, encrypted.
+        </p>
+        <div>
+          <label for="garmin-email" class="mb-1 block text-[12.5px] text-muted">Garmin email</label>
+          <input id="garmin-email" v-model="email" type="email" autocomplete="off" :class="input" />
+        </div>
+        <div>
+          <label for="garmin-password" class="mb-1 block text-[12.5px] text-muted">Garmin password</label>
+          <input id="garmin-password" v-model="password" type="password" autocomplete="off" :class="input" />
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" :disabled="busy || !email.trim() || !password" :class="button">
+            {{ busy ? 'Signing in to Garmin…' : 'Connect Garmin' }}
           </button>
           <p v-if="message" class="m-0 text-[13.5px]" :class="failed ? 'text-ink' : 'text-muted'" role="status">
             {{ message }}
@@ -151,9 +165,58 @@ async function remove() {
         </div>
       </form>
 
-      <p class="mt-4 mb-0 text-[12.5px] text-muted">
-        Not affiliated with Garmin. Read-only: the coach is never offered a tool that writes. The bundle is
-        stored encrypted and deleted with your account.
+      <form v-else class="grid gap-3" @submit.prevent="sendCode">
+        <p class="m-0 text-[14px] leading-[1.6] text-muted">
+          Garmin sent a code to your email or phone. Enter it within a few minutes.
+        </p>
+        <div>
+          <label for="garmin-code" class="mb-1 block text-[12.5px] text-muted">Code from Garmin</label>
+          <input
+            id="garmin-code"
+            v-model="code"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="12"
+            :class="input"
+          />
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <button type="submit" :disabled="busy || !code.trim()" :class="button">
+            {{ busy ? 'Checking…' : 'Connect' }}
+          </button>
+          <button
+            type="button"
+            :disabled="busy"
+            class="cursor-pointer text-[13px] text-muted hover:text-ink disabled:opacity-50"
+            @click="startOver"
+          >
+            Start over
+          </button>
+          <p v-if="message" class="m-0 text-[13.5px]" :class="failed ? 'text-ink' : 'text-muted'" role="status">
+            {{ message }}
+          </p>
+        </div>
+      </form>
+
+      <details class="mt-6" :open="otherWays" @toggle="otherWays = $event.target.open">
+        <summary class="cursor-pointer font-display text-[14px] font-semibold text-ink">Other ways to connect</summary>
+        <div class="mt-3">
+          <GarminTokenPaste />
+        </div>
+      </details>
+    </template>
+
+    <template v-else>
+      <h3 class="mt-6 mb-2 font-display text-[14.5px] font-semibold">Connect, or refresh expired tokens</h3>
+      <GarminTokenPaste />
+      <p v-if="message" class="m-0 mt-2 text-[13.5px]" :class="failed ? 'text-ink' : 'text-muted'" role="status">
+        {{ message }}
       </p>
+    </template>
+
+    <p class="mt-4 mb-0 text-[12.5px] text-muted">
+      Not affiliated with Garmin. Read-only: the coach is never offered a tool that writes. Your Garmin access
+      is stored encrypted and deleted with your account.
+    </p>
   </section>
 </template>

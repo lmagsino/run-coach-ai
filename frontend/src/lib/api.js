@@ -4,11 +4,13 @@
 
 const BASE = '/api'
 
-// ApiError carries the status so the router can treat 401 as "sign in".
+// ApiError carries the status so the router can treat 401 as "sign in", and
+// the server's kind where it sends one (a Garmin sign-in failure's reason).
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, kind = '') {
     super(message)
     this.status = status
+    this.kind = kind
   }
 }
 
@@ -28,13 +30,15 @@ async function request(method, path, body) {
   }
   if (!res.ok) {
     let detail = `request failed (${res.status})`
+    let kind = ''
     try {
       const data = await res.json()
       if (data?.error) detail = data.error
+      if (data?.kind) kind = data.kind
     } catch {
       // Non-JSON error body; keep the status-based message.
     }
-    throw new ApiError(detail, res.status)
+    throw new ApiError(detail, res.status, kind)
   }
   if (res.status === 204) return null
   return res.json()
@@ -56,6 +60,8 @@ export const api = {
   deleteAccount: (fields) => request('DELETE', '/account', fields),
   garminTokens: (bundle) => request('POST', '/garmin/tokens', { bundle }),
   garminTokensDelete: () => request('DELETE', '/garmin/tokens'),
+  garminLogin: (email, password) => request('POST', '/garmin/login', { email, password }),
+  garminLoginCode: (code) => request('POST', '/garmin/login/code', { code }),
 }
 
 // Splits an SSE byte stream into {event, data} frames. Frames are separated by a
