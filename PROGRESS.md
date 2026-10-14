@@ -2,6 +2,57 @@
 
 Tracks work across sessions so we can pick up where we left off. One section per phase; check items off as they're completed and verified.
 
+## Where things stand (updated 14 Oct 2026)
+
+Start here when picking the project up again. The phase sections further down are history.
+
+**State:** all code is on `main`, pushed, CI green (Go tests, vitest, both browser
+walkthroughs, and a build of the deploy image). Nothing is hosted yet.
+
+### Done
+- **Phases 5–7:** Garmin-only coach on Claude, charts as proof, saved chats, sign-in, phone layout.
+- **Phase 9, accounts:** invite-only sign-up, email sign-in, account page (name, password,
+  delete), Garmin per runner, daily caps per runner and overall. Live-tested against Postgres,
+  the real Garmin connection and the model: [docs/live/phase-9.md](docs/live/phase-9.md)
+  (18 checks). README has a guide for inviting runners.
+- **Local run:** `bin/dev` only (server via `go run`, UI via Vite, foreground, Ctrl-C stops
+  both). The server listens on 127.0.0.1. Never build a server binary and launch it from a
+  script or `/tmp`: CrowdStrike blocked that as malware on the work laptop (see CLAUDE.md).
+- **Phase 8.1 and 8.6:** Dockerfile and `render.yaml`; CI runs both walkthroughs and builds the
+  image on every push.
+- **Shorter Render setup:** Render generates `RUNCOACH_TOKEN_KEY`; the owner password goes in as
+  `RUNCOACH_OWNER_PASSWORD` (no hash step). Four values to enter.
+- **Garmin sign-in, backend half:** a runner can connect Garmin with their Garmin email and
+  password (and MFA code) instead of a terminal command. `POST /api/garmin/login` and
+  `/api/garmin/login/code`, helper `deploy/garmin-mcp/login.py`, password used once and never
+  stored, 5 attempts per 15 minutes, paste stays as the fallback. Tested with fakes only.
+
+### In progress
+- **Garmin sign-in, account page:** the email/password/MFA form in
+  `frontend/src/components/GarminSection.vue`, shown when `/api/me` says `garmin_login: true`,
+  with the uv/Docker/paste steps moved under "Other ways to connect". Then: the mock walkthrough
+  step (mock code is `123456`, password `wrong` is refused), ADR 0011 (amends ADR 0003: the
+  server may now sign in once with a password it never keeps), and the README guide's step 2.
+
+### Pending
+1. **Leo:** rotate the Anthropic API key (it was pasted in chat), change the owner password
+   from the temporary `runcoach`, and remove `GARMIN_PASSWORD` from `backend/.env`.
+2. **Leo, 8.2:** create Neon (free) and Render (Blueprint from `render.yaml`); enter
+   `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_EMAIL`, `RUNCOACH_OWNER_PASSWORD`, and
+   optionally `RUNCOACH_GARMIN_BUNDLE` (contents of `backend/.garmin_bundle.b64`).
+3. **Decide:** hosted model. `render.yaml` says `claude-opus-5-5`; locally Sonnet 5.5 is used,
+   and the credit is about $4.60.
+4. **The big unknown:** whether Garmin lets Render's servers sign in at all (it has blocked
+   data-centre logins since March 2026). Test once with Leo's account after deploying. If it is
+   blocked, the page falls back to the token paste and nothing else changes.
+5. **8.3:** opt-in live Garmin tool check (`RUNCOACH_LIVE_GARMIN_TESTS=1`): proves the read-only
+   filter against the real tool list; results into `docs/live/phase-8.md`. Not written yet.
+6. **8.4:** live pass from the phone on the hosted app, measured (time, tokens, cost, charts).
+7. **8.5:** fix what the live pass finds; finish the README.
+8. Rebuild the local Garmin image (`cd deploy/garmin-mcp && docker compose build garmin-mcp`) so
+   it has the sign-in helper, and set `GARMIN_LOGIN_COMMAND` in `backend/.env` to
+   `docker run -i --rm --entrypoint runcoach-garmin-login run-coach-ai/garmin-mcp:latest`.
+
 ---
 
 ## Phase 2 — Backend Foundations
@@ -158,5 +209,5 @@ live last (8). Issues #24–#29 are superseded.
       paste, saved chats, sidebar, phone drawer, one origin
 - [x] **Phase 9 Accounts** (14 Oct 2026, on `main`): sign-up by invite, email sign-in, account
       page, Garmin per runner by a pasted bundle, member and global caps, tenancy proof (ADR 0010)
-- [ ] **Phase 8 Deploy and test** (`phase-8-deploy`): one image on Render free + Neon free, Garmin
-      auth and paste, live pass from the phone, Playwright smoke
+- [ ] **Phase 8 Deploy and test**: one image on Render free + Neon free, live pass from the
+      phone. 8.1 and 8.6 done; 8.2–8.5 pending (see "Where things stand" at the top)

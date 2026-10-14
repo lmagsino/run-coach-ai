@@ -30,7 +30,8 @@
 ## Phase 8: Deploy (free) and test (phase-8-deploy)
 - [x] 8.1 Dockerfile and `render.yaml`
 - [ ] 8.2 Neon + Render set up (Leo)
-- [ ] 8.3 Garmin auth on the laptop, paste, live tool-diff test (Leo + code)
+- [ ] 8.3 Live tool-diff test (`RUNCOACH_LIVE_GARMIN_TESTS=1`), and a first Garmin sign-in from Render (Leo + code)
+- [ ] 8.7 Garmin sign-in with email and password: backend done (12c3850); account page form, mock walkthrough step, ADR 0011, README guide still to do
 - [ ] 8.4 Live pass from the phone, measured
 - [ ] 8.5 Rough edges, README
 - [x] 8.6 Playwright smoke in CI (both walkthroughs via bin/dev) and an image build on every push
