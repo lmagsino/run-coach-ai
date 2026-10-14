@@ -84,9 +84,10 @@ func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// loginLimiter allows a handful of attempts per minute per client address. In
-// memory, so it resets on restart; enough to stop a casual guess on a public
-// URL, which is the only threat an owner-password login faces.
+// loginLimiter blocks an address after a handful of failed attempts in a
+// minute: wrong passwords and wrong invite codes. Successes are not counted,
+// so a runner who signs in, out and in again is never locked out. In memory,
+// so it resets on restart; enough to stop guessing on a public URL.
 type loginLimiter struct {
 	mu    sync.Mutex
 	hits  map[string][]time.Time
@@ -98,21 +99,29 @@ func newLoginLimiter(limit int, win time.Duration) *loginLimiter {
 	return &loginLimiter{hits: map[string][]time.Time{}, limit: limit, win: win}
 }
 
-func (l *loginLimiter) allow(key string, now time.Time) bool {
+// blocked reports whether key has used up its failures for the window.
+func (l *loginLimiter) blocked(key string, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	return len(l.recentLocked(key, now)) >= l.limit
+}
+
+// fail records one failed attempt for key.
+func (l *loginLimiter) fail(key string, now time.Time) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.hits[key] = append(l.recentLocked(key, now), now)
+}
+
+func (l *loginLimiter) recentLocked(key string, now time.Time) []time.Time {
 	var recent []time.Time
 	for _, t := range l.hits[key] {
 		if now.Sub(t) < l.win {
 			recent = append(recent, t)
 		}
 	}
-	if len(recent) >= l.limit {
-		l.hits[key] = recent
-		return false
-	}
-	l.hits[key] = append(recent, now)
-	return true
+	l.hits[key] = recent
+	return recent
 }
 
 // clientKey is the address the limiter counts. Behind a proxy that sets

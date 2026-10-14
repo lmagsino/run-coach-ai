@@ -381,14 +381,25 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	}
 }
 
+// Failures are limited; successes are not counted, so signing in and out
+// repeatedly never locks a runner out.
 func TestLoginIsRateLimited(t *testing.T) {
-	s := liveServer(t, "pw")
+	s := liveServer(t, "correct horse")
+	for i := 0; i < 8; i++ {
+		if rec := do(t, s, http.MethodPost, "/api/login", `{"password":"correct horse"}`); rec.Code != http.StatusOK {
+			t.Fatalf("successful sign-in %d: %d", i+1, rec.Code)
+		}
+	}
 	var last int
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 6; i++ {
 		last = do(t, s, http.MethodPost, "/api/login", `{"password":"nope"}`).Code
 	}
 	if last != http.StatusTooManyRequests {
-		t.Errorf("seventh attempt: got %d, want 429", last)
+		t.Errorf("sixth failure: got %d, want 429", last)
+	}
+	// Once blocked, even the right password waits out the window.
+	if rec := do(t, s, http.MethodPost, "/api/login", `{"password":"correct horse"}`); rec.Code != http.StatusTooManyRequests {
+		t.Errorf("right password while blocked: %d", rec.Code)
 	}
 }
 

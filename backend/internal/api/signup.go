@@ -46,11 +46,13 @@ func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "sign-up is closed"})
 		return
 	}
-	if !s.logins.allow(clientKey(r), time.Now()) {
+	key := clientKey(r)
+	if s.logins.blocked(key, time.Now()) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts; wait a minute"})
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(body.InviteCode)), []byte(s.cfg.InviteCode)) != 1 {
+		s.logins.fail(key, time.Now())
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "that invite code is not right"})
 		return
 	}

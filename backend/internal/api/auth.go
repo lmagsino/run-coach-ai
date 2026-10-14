@@ -25,12 +25,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body must be JSON with an \"email\" and a \"password\""})
 		return
 	}
-	if !s.logins.allow(clientKey(r), time.Now()) {
+	key := clientKey(r)
+	if s.logins.blocked(key, time.Now()) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts; wait a minute"})
 		return
 	}
 	id, err := s.auth.Authenticate(r.Context(), auth.Credentials{Email: body.Email, Password: body.Password})
 	if errors.Is(err, auth.ErrDenied) {
+		s.logins.fail(key, time.Now())
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong email or password"})
 		return
 	}
