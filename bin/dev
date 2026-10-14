@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [ ! -f backend/.env ] && [ -z "${RUNCOACH_MOCK:-}" ]; then
+if [ ! -f backend/.env ] && [ -z "${RUNCOACH_MOCK:-}" ] && [ -z "${RUNCOACH_ENV_FILE:-}" ]; then
   echo "backend/.env is missing: cp backend/.env.example backend/.env and fill it in," >&2
   echo "or try the UI with canned answers: RUNCOACH_MOCK=1 bin/dev" >&2
   exit 1
