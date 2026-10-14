@@ -6,8 +6,9 @@ Tracks work across sessions so we can pick up where we left off. One section per
 
 Start here when picking the project up again. The phase sections further down are history.
 
-**State:** all code is on `main`, pushed, CI green (Go tests, vitest, both browser
-walkthroughs, and a build of the deploy image). Nothing is hosted yet.
+**State:** all planned code is written, on `main`, pushed, CI green (Go tests, vitest, both
+browser walkthroughs, and a build of the deploy image). Nothing is hosted yet. **What is left
+starts with Leo** (Pending 1–3, 8); after that, the live work on Render (Pending 4, 6, 7).
 
 ### Done
 - **Phases 5–7:** Garmin-only coach on Claude, charts as proof, saved chats, sign-in, phone layout.
@@ -20,6 +21,9 @@ walkthroughs, and a build of the deploy image). Nothing is hosted yet.
   script or `/tmp`: CrowdStrike blocked that as malware on the work laptop (see CLAUDE.md).
 - **Phase 8.1 and 8.6:** Dockerfile and `render.yaml`; CI runs both walkthroughs and builds the
   image on every push.
+- **Phase 8.3, live tool check (laptop):** the real `garmin-mcp` with the real bundle: 155 of 155
+  tools match `tools.txt`, 77 exposed and all reads, profile read about 0.9 s. It also fixed the
+  probe's empty name ("Connected as …" now works). [docs/live/phase-8.md](docs/live/phase-8.md)
 - **Shorter Render setup:** Render generates `RUNCOACH_TOKEN_KEY`; the owner password goes in as
   `RUNCOACH_OWNER_PASSWORD` (no hash step). Four values to enter.
 - **Garmin sign-in (ADR 0011):** a runner connects Garmin on the account page with their Garmin
@@ -30,8 +34,9 @@ walkthroughs, and a build of the deploy image). Nothing is hosted yet.
   walkthrough drives it (password `wrong` is refused, code `123456` works).
 
 ### In progress
-- Nothing half-built. The Garmin sign-in (backend and account page, ADR 0011) is done and tested
-  against fakes and the mock server; it has not met real Garmin yet (Pending 4 and 8).
+- Nothing half-built. The Garmin sign-in (ADR 0011) is done and tested against fakes and the mock
+  server, and the local image has the helper; it has not met a real Garmin sign-in yet
+  (Pending 8 locally, then 4 on Render).
 
 ### Pending
 1. **Leo:** rotate the Anthropic API key (it was pasted in chat), change the owner password
