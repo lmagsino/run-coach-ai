@@ -3,26 +3,59 @@ package auth
 import (
 	"context"
 	"testing"
+
+	"github.com/lmagsino/run-coach-ai/backend/internal/store"
 )
 
-func TestOwnerPassword(t *testing.T) {
-	hash, err := HashPassword("correct horse")
-	if err != nil {
+func TestEmailPassword(t *testing.T) {
+	ctx := context.Background()
+	s := store.NewMemory()
+	ownerHash, _ := HashPassword("owner password")
+	owner, _ := s.Owner(ctx)
+	owner.Email, owner.PasswordHash = "leo@example.com", ownerHash
+	if err := s.UpdateRunner(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	p := OwnerPassword{Hash: []byte(hash), OwnerID: 1}
-	ctx := context.Background()
+	memberHash, _ := HashPassword("member password")
+	ana, _ := s.CreateRunner(ctx, store.Runner{Kind: store.KindMember, Email: "ana@example.com", PasswordHash: memberHash, DisplayName: "Ana", DailyQuestionCap: 10})
+	p := EmailPassword{Runners: s}
 
-	if id, err := p.Authenticate(ctx, Credentials{Password: "correct horse"}); err != nil || id != 1 {
-		t.Errorf("right password: %d, %v", id, err)
+	ok := []struct {
+		c    Credentials
+		want int64
+	}{
+		{Credentials{Email: "ana@example.com", Password: "member password"}, ana.ID},
+		{Credentials{Email: " ANA@example.com ", Password: "member password"}, ana.ID},
+		{Credentials{Email: "leo@example.com", Password: "owner password"}, owner.ID},
+		// The sign-in form before accounts sent only a password.
+		{Credentials{Password: "owner password"}, owner.ID},
 	}
-	for _, bad := range []string{"wrong", "", "correct horse "} {
-		if _, err := p.Authenticate(ctx, Credentials{Password: bad}); err != ErrDenied {
-			t.Errorf("password %q: got %v, want ErrDenied", bad, err)
+	for _, tc := range ok {
+		if id, err := p.Authenticate(ctx, tc.c); err != nil || id != tc.want {
+			t.Errorf("%+v: got %d, %v", tc.c, id, err)
 		}
 	}
-	// No hash configured means nobody can log in, never "anyone can".
-	if _, err := (OwnerPassword{OwnerID: 1}).Authenticate(ctx, Credentials{Password: "anything"}); err != ErrDenied {
-		t.Errorf("empty hash: got %v, want ErrDenied", err)
+
+	denied := []Credentials{
+		{Email: "ana@example.com", Password: "owner password"},
+		{Email: "ana@example.com", Password: ""},
+		{Email: "nobody@example.com", Password: "member password"},
+		{Password: "member password"},
+	}
+	for _, c := range denied {
+		if _, err := p.Authenticate(ctx, c); err != ErrDenied {
+			t.Errorf("%+v: got %v, want ErrDenied", c, err)
+		}
+	}
+
+	ana.Status = store.StatusDisabled
+	_ = s.UpdateRunner(ctx, ana)
+	if _, err := p.Authenticate(ctx, Credentials{Email: "ana@example.com", Password: "member password"}); err != ErrDenied {
+		t.Errorf("disabled runner signed in: %v", err)
+	}
+	// A runner with no password can never sign in, whatever is typed.
+	nopw, _ := s.CreateRunner(ctx, store.Runner{Kind: store.KindMember, Email: "nopw@example.com", DisplayName: "x"})
+	if _, err := p.Authenticate(ctx, Credentials{Email: nopw.Email, Password: "anything at all"}); err != ErrDenied {
+		t.Errorf("runner without a password signed in: %v", err)
 	}
 }

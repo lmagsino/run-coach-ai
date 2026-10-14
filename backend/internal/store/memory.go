@@ -12,7 +12,8 @@ import (
 // as runner 1 exactly like the migration does.
 type Memory struct {
 	mu       sync.Mutex
-	owner    Runner
+	runners  map[int64]Runner
+	nextRun  int64
 	sessions map[string]memSession
 	chats    map[string]Chat
 	messages map[string][]Message
@@ -36,7 +37,9 @@ type auditRow struct {
 
 func NewMemory() *Memory {
 	return &Memory{
-		owner:    Runner{ID: 1, Kind: "owner", DisplayName: "Owner", DailyQuestionCap: 30},
+		runners: map[int64]Runner{1: {ID: 1, Kind: KindOwner, Status: StatusActive, DisplayName: "Owner",
+			DailyQuestionCap: 30, CreatedAt: time.Now()}},
+		nextRun:  2,
 		sessions: map[string]memSession{},
 		chats:    map[string]Chat{},
 		messages: map[string][]Message{},
@@ -51,7 +54,132 @@ func (m *Memory) nextID(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, m.seq)
 }
 
-func (m *Memory) Owner(context.Context) (Runner, error) { return m.owner, nil }
+func (m *Memory) Owner(context.Context) (Runner, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var owner *Runner
+	for _, r := range m.runners {
+		if r.Kind == KindOwner && (owner == nil || r.ID < owner.ID) {
+			r := r
+			owner = &r
+		}
+	}
+	if owner == nil {
+		return Runner{}, fmt.Errorf("owner row missing: %w", ErrNotFound)
+	}
+	return *owner, nil
+}
+
+func (m *Memory) RunnerByID(_ context.Context, id int64) (Runner, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.runners[id]
+	if !ok {
+		return Runner{}, ErrNotFound
+	}
+	return r, nil
+}
+
+func (m *Memory) RunnerByEmail(_ context.Context, email string) (Runner, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	email = NormalizeEmail(email)
+	for _, r := range m.runners {
+		if email != "" && r.Email == email {
+			return r, nil
+		}
+	}
+	return Runner{}, ErrNotFound
+}
+
+func (m *Memory) emailTakenLocked(email string, except int64) bool {
+	for _, r := range m.runners {
+		if email != "" && r.Email == email && r.ID != except {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Memory) CreateRunner(_ context.Context, r Runner) (Runner, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r.Email = NormalizeEmail(r.Email)
+	if m.emailTakenLocked(r.Email, 0) {
+		return Runner{}, ErrEmailTaken
+	}
+	if r.Status == "" {
+		r.Status = StatusActive
+	}
+	r.ID = m.nextRun
+	m.nextRun++
+	r.CreatedAt = time.Now()
+	m.runners[r.ID] = r
+	return r, nil
+}
+
+func (m *Memory) UpdateRunner(_ context.Context, r Runner) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.runners[r.ID]
+	if !ok {
+		return ErrNotFound
+	}
+	r.Email = NormalizeEmail(r.Email)
+	if m.emailTakenLocked(r.Email, r.ID) {
+		return ErrEmailTaken
+	}
+	cur.Email, cur.PasswordHash, cur.Status = r.Email, r.PasswordHash, r.Status
+	cur.DisplayName, cur.DailyQuestionCap = r.DisplayName, r.DailyQuestionCap
+	m.runners[r.ID] = cur
+	return nil
+}
+
+func (m *Memory) TouchLogin(_ context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r, ok := m.runners[id]; ok {
+		now := time.Now()
+		r.LastLoginAt = &now
+		m.runners[id] = r
+	}
+	return nil
+}
+
+// DeleteRunner mirrors the Postgres cascade by hand.
+func (m *Memory) DeleteRunner(_ context.Context, id int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.runners[id]; !ok {
+		return ErrNotFound
+	}
+	delete(m.runners, id)
+	for sid, se := range m.sessions {
+		if se.runnerID == id {
+			delete(m.sessions, sid)
+		}
+	}
+	for cid, c := range m.chats {
+		if c.RunnerID == id {
+			delete(m.chats, cid)
+			delete(m.messages, cid)
+			delete(m.deleted, cid)
+		}
+	}
+	delete(m.garmin, id)
+	prefix := fmt.Sprintf("%d/", id)
+	for k := range m.usage {
+		if len(k) > len(prefix) && k[:len(prefix)] == prefix {
+			delete(m.usage, k)
+		}
+	}
+	for i := range m.audit {
+		if m.audit[i].runnerID == id {
+			m.audit[i].runnerID = 0
+		}
+	}
+	return nil
+}
 
 func (m *Memory) CreateSession(_ context.Context, runnerID int64, ttl time.Duration) (string, error) {
 	id, err := newSessionID()
@@ -71,7 +199,21 @@ func (m *Memory) LookupSession(_ context.Context, id string) (int64, error) {
 	if !ok || time.Now().After(s.expiresAt) {
 		return 0, ErrNoSession
 	}
+	if r, ok := m.runners[s.runnerID]; !ok || r.Status != StatusActive {
+		return 0, ErrNoSession
+	}
 	return s.runnerID, nil
+}
+
+func (m *Memory) DeleteSessionsFor(_ context.Context, runnerID int64, keep string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for sid, se := range m.sessions {
+		if se.runnerID == runnerID && sid != keep {
+			delete(m.sessions, sid)
+		}
+	}
+	return nil
 }
 
 func (m *Memory) DeleteSession(_ context.Context, id string) error {
@@ -212,6 +354,22 @@ func (m *Memory) Usage(_ context.Context, runnerID int64, day time.Time) (Usage,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.usage[usageKey(runnerID, day)], nil
+}
+
+func (m *Memory) GlobalUsage(_ context.Context, day time.Time) (Usage, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	suffix := "/" + Day(day).Format("2006-01-02")
+	var total Usage
+	for k, u := range m.usage {
+		if len(k) > len(suffix) && k[len(k)-len(suffix):] == suffix {
+			total.Questions += u.Questions
+			total.InputTokens += u.InputTokens
+			total.CachedInputTokens += u.CachedInputTokens
+			total.OutputTokens += u.OutputTokens
+		}
+	}
+	return total, nil
 }
 
 func (m *Memory) AddUsage(_ context.Context, runnerID int64, day time.Time, add Usage) error {

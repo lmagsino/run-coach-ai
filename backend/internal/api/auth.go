@@ -18,32 +18,39 @@ import (
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Password == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body must be JSON with a \"password\""})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "body must be JSON with an \"email\" and a \"password\""})
 		return
 	}
 	if !s.logins.allow(clientKey(r), time.Now()) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many attempts; wait a minute"})
 		return
 	}
-	id, err := s.auth.Authenticate(r.Context(), auth.Credentials{Password: body.Password})
+	id, err := s.auth.Authenticate(r.Context(), auth.Credentials{Email: body.Email, Password: body.Password})
 	if errors.Is(err, auth.ErrDenied) {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong password"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "wrong email or password"})
 		return
 	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	s.startSession(w, r, id, "sign_in")
+}
+
+// startSession signs a runner in: a new session, the cookie, the audit row.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, id int64, action string) {
 	sid, err := s.store.CreateSession(r.Context(), id, sessionTTL)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	setSessionCookie(w, r, sid)
-	_ = s.store.Audit(r.Context(), id, "sign_in", nil)
+	_ = s.store.TouchLogin(r.Context(), id)
+	_ = s.store.Audit(r.Context(), id, action, nil)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -100,7 +107,7 @@ func (s *Server) garminStateFor(r *http.Request, id int64) (garminState, error) 
 // handleMe tells the UI who is signed in, how Garmin is, and today's usage.
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	id := runnerID(r)
-	owner, err := s.store.Owner(r.Context())
+	runner, err := s.store.RunnerByID(r.Context(), id)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -116,9 +123,11 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"runner": map[string]any{"id": id, "display_name": owner.DisplayName},
+		"runner": map[string]any{
+			"id": id, "display_name": runner.DisplayName, "email": runner.Email, "kind": runner.Kind,
+		},
 		"garmin": st,
-		"usage":  map[string]any{"today": usage.Questions, "cap": owner.DailyQuestionCap},
+		"usage":  map[string]any{"today": usage.Questions, "cap": runner.DailyQuestionCap},
 		"mock":   s.cfg.MockMode,
 	})
 }

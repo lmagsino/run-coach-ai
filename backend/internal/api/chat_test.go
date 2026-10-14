@@ -39,7 +39,7 @@ func liveServer(t *testing.T, password string) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return New(&config.Config{OwnerPasswordHash: hash}, nil)
+	return New(&config.Config{OwnerEmail: "leo@example.com", OwnerPasswordHash: hash}, nil)
 }
 
 // sseEvent is one parsed frame off the stream.
@@ -328,10 +328,10 @@ func TestLoginSessionAndLogout(t *testing.T) {
 	if rec := do(t, s, http.MethodGet, "/api/me", ""); rec.Code != http.StatusUnauthorized {
 		t.Errorf("/me without a session: %d", rec.Code)
 	}
-	if rec := do(t, s, http.MethodPost, "/api/login", `{"password":"wrong"}`); rec.Code != http.StatusUnauthorized {
+	if rec := do(t, s, http.MethodPost, "/api/login", `{"email":"leo@example.com","password":"wrong"}`); rec.Code != http.StatusUnauthorized {
 		t.Errorf("wrong password: %d", rec.Code)
 	}
-	rec := do(t, s, http.MethodPost, "/api/login", `{"password":"correct horse"}`)
+	rec := do(t, s, http.MethodPost, "/api/login", `{"email":"Leo@Example.com","password":"correct horse"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login: %d %s", rec.Code, rec.Body.String())
 	}
@@ -350,12 +350,19 @@ func TestLoginSessionAndLogout(t *testing.T) {
 		t.Fatalf("/me with a session: %d %s", rec.Code, rec.Body.String())
 	}
 	var me struct {
+		Runner struct {
+			Email, Kind string
+		}
 		Garmin garminState
 		Mock   bool
 	}
 	_ = json.Unmarshal(rec.Body.Bytes(), &me)
-	if me.Garmin.Status != "none" || me.Garmin.Fix == "" || me.Mock {
+	if me.Garmin.Status != "none" || me.Garmin.Fix == "" || me.Mock || me.Runner.Email != "leo@example.com" || me.Runner.Kind != "owner" {
 		t.Errorf("/me: %+v", me)
+	}
+	// The password-only form from before accounts still signs the owner in.
+	if rec := do(t, s, http.MethodPost, "/api/login", `{"password":"correct horse"}`); rec.Code != http.StatusOK {
+		t.Errorf("password-only owner login: %d", rec.Code)
 	}
 
 	id := newChat(t, s, cookie)

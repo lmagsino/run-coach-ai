@@ -46,7 +46,7 @@ func TestOwnerIsRowOne(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if owner.ID != 1 || owner.Kind != "owner" || owner.DailyQuestionCap != 30 {
+			if owner.ID != 1 || owner.Kind != KindOwner || owner.DailyQuestionCap != 30 || owner.Status != StatusActive {
 				t.Errorf("owner: %+v", owner)
 			}
 		})
@@ -226,6 +226,114 @@ func compact(t *testing.T, raw json.RawMessage) string {
 	return string(b)
 }
 
+// Members: create, find by email (any case), refuse a second sign-up with the
+// same address, update, and sign-in only while active.
+func TestRunnersLifecycle(t *testing.T) {
+	for name, s := range stores(t) {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			m, err := s.CreateRunner(ctx, Runner{Kind: KindMember, Email: "  Ana@Example.com ", PasswordHash: "h", DisplayName: "Ana", DailyQuestionCap: 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if m.ID <= 1 || m.Email != "ana@example.com" || m.Status != StatusActive {
+				t.Errorf("created: %+v", m)
+			}
+			if _, err := s.CreateRunner(ctx, Runner{Kind: KindMember, Email: "ANA@example.com", DisplayName: "x"}); err != ErrEmailTaken {
+				t.Errorf("duplicate email: %v", err)
+			}
+			got, err := s.RunnerByEmail(ctx, "ana@EXAMPLE.com")
+			if err != nil || got.ID != m.ID || got.PasswordHash != "h" {
+				t.Errorf("by email: %+v %v", got, err)
+			}
+			if _, err := s.RunnerByEmail(ctx, "nobody@example.com"); err != ErrNotFound {
+				t.Errorf("unknown email: %v", err)
+			}
+			got.DisplayName, got.PasswordHash = "Ana R", "h2"
+			if err := s.UpdateRunner(ctx, got); err != nil {
+				t.Fatal(err)
+			}
+			if got, _ = s.RunnerByID(ctx, m.ID); got.DisplayName != "Ana R" || got.PasswordHash != "h2" {
+				t.Errorf("after update: %+v", got)
+			}
+			if err := s.TouchLogin(ctx, m.ID); err != nil {
+				t.Fatal(err)
+			}
+			if got, _ = s.RunnerByID(ctx, m.ID); got.LastLoginAt == nil {
+				t.Error("last login not recorded")
+			}
+
+			// Sessions: a disabled runner's sessions stop working, and a
+			// password change can sign out everywhere else.
+			a, _ := s.CreateSession(ctx, m.ID, time.Hour)
+			b, _ := s.CreateSession(ctx, m.ID, time.Hour)
+			if err := s.DeleteSessionsFor(ctx, m.ID, a); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.LookupSession(ctx, b); err != ErrNoSession {
+				t.Errorf("other session survived: %v", err)
+			}
+			if _, err := s.LookupSession(ctx, a); err != nil {
+				t.Errorf("kept session gone: %v", err)
+			}
+			got.Status = StatusDisabled
+			_ = s.UpdateRunner(ctx, got)
+			if _, err := s.LookupSession(ctx, a); err != ErrNoSession {
+				t.Errorf("disabled runner's session still works: %v", err)
+			}
+		})
+	}
+}
+
+// Deleting a runner takes everything it owns and nothing anyone else owns.
+func TestDeleteRunnerCascades(t *testing.T) {
+	for name, s := range stores(t) {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			m, err := s.CreateRunner(ctx, Runner{Kind: KindMember, Email: "del@example.com", DisplayName: "Del", DailyQuestionCap: 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mine, _ := s.CreateChat(ctx, m.ID, "mine")
+			_, _ = s.AppendMessage(ctx, m.ID, Message{ChatID: mine.ID, Role: "user", Content: "q"})
+			ownerChat, _ := s.CreateChat(ctx, 1, "owner's")
+			sid, _ := s.CreateSession(ctx, m.ID, time.Hour)
+			_ = s.UpsertGarminConnection(ctx, GarminConnection{RunnerID: m.ID, Kind: ConnectionLocalTokens, Blob: []byte("b"), KeyVersion: 1, Status: GarminConnected, ImportedAt: time.Now()})
+			day := time.Now()
+			_ = s.AddUsage(ctx, m.ID, day, Usage{Questions: 2})
+			_ = s.AddUsage(ctx, 1, day, Usage{Questions: 3})
+			if g, _ := s.GlobalUsage(ctx, day); g.Questions < 5 {
+				t.Errorf("global usage before delete: %+v", g)
+			}
+
+			if err := s.DeleteRunner(ctx, m.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.RunnerByID(ctx, m.ID); err != ErrNotFound {
+				t.Errorf("runner survived: %v", err)
+			}
+			if _, err := s.GetChat(ctx, m.ID, mine.ID); err != ErrNotFound {
+				t.Errorf("chat survived: %v", err)
+			}
+			if _, err := s.LookupSession(ctx, sid); err != ErrNoSession {
+				t.Errorf("session survived: %v", err)
+			}
+			if c, _ := s.GarminConnection(ctx, m.ID); c != nil {
+				t.Error("garmin connection survived")
+			}
+			if u, _ := s.Usage(ctx, m.ID, day); u.Questions != 0 {
+				t.Errorf("usage survived: %+v", u)
+			}
+			if _, err := s.GetChat(ctx, 1, ownerChat.ID); err != nil {
+				t.Errorf("the owner's chat went too: %v", err)
+			}
+			if err := s.DeleteRunner(ctx, m.ID); err != ErrNotFound {
+				t.Errorf("second delete: %v", err)
+			}
+		})
+	}
+}
+
 // Every Postgres statement that touches a runner's table must name runner_id,
 // and nothing outside this package may run SQL: the scoped store is the only
 // data access (ADR 0002).
@@ -244,6 +352,10 @@ func TestEveryRunnerTableQueryIsScoped(t *testing.T) {
 			continue
 		}
 		checked++
+		// The global cap reads every runner's usage on purpose and says so.
+		if strings.Contains(sql, "across all runners") {
+			continue
+		}
 		if !strings.Contains(sql, "runner_id") {
 			t.Errorf("statement touches a runner table without runner_id:\n%s", sql)
 		}

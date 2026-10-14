@@ -20,15 +20,86 @@ type PG struct{ pool *pgxpool.Pool }
 
 func NewPG(pool *pgxpool.Pool) *PG { return &PG{pool: pool} }
 
-func (s *PG) Owner(ctx context.Context) (Runner, error) {
+const runnerColumns = `id, kind, COALESCE(email, ''), password_hash, status, display_name, daily_question_cap, created_at, last_login_at`
+
+func scanRunner(row pgx.Row) (Runner, error) {
 	var r Runner
-	err := s.pool.QueryRow(ctx,
-		`SELECT id, kind, display_name, daily_question_cap FROM runners WHERE kind = 'owner' ORDER BY id LIMIT 1`,
-	).Scan(&r.ID, &r.Kind, &r.DisplayName, &r.DailyQuestionCap)
+	err := row.Scan(&r.ID, &r.Kind, &r.Email, &r.PasswordHash, &r.Status, &r.DisplayName, &r.DailyQuestionCap, &r.CreatedAt, &r.LastLoginAt)
 	if errors.Is(err, pgx.ErrNoRows) {
+		return r, ErrNotFound
+	}
+	return r, err
+}
+
+func (s *PG) Owner(ctx context.Context) (Runner, error) {
+	r, err := scanRunner(s.pool.QueryRow(ctx,
+		`SELECT `+runnerColumns+` FROM runners WHERE kind = 'owner' ORDER BY id LIMIT 1`))
+	if errors.Is(err, ErrNotFound) {
 		return r, fmt.Errorf("owner row missing: %w", ErrNotFound)
 	}
 	return r, err
+}
+
+func (s *PG) RunnerByID(ctx context.Context, id int64) (Runner, error) {
+	return scanRunner(s.pool.QueryRow(ctx, `SELECT `+runnerColumns+` FROM runners WHERE id = $1`, id))
+}
+
+func (s *PG) RunnerByEmail(ctx context.Context, email string) (Runner, error) {
+	return scanRunner(s.pool.QueryRow(ctx,
+		`SELECT `+runnerColumns+` FROM runners WHERE email = $1`, NormalizeEmail(email)))
+}
+
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func (s *PG) CreateRunner(ctx context.Context, r Runner) (Runner, error) {
+	if r.Status == "" {
+		r.Status = StatusActive
+	}
+	created, err := scanRunner(s.pool.QueryRow(ctx,
+		`INSERT INTO runners (kind, email, password_hash, status, display_name, daily_question_cap)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+runnerColumns,
+		r.Kind, nullable(NormalizeEmail(r.Email)), r.PasswordHash, r.Status, r.DisplayName, r.DailyQuestionCap))
+	if isUniqueViolation(err) {
+		return Runner{}, ErrEmailTaken
+	}
+	return created, err
+}
+
+func (s *PG) UpdateRunner(ctx context.Context, r Runner) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE runners SET email = $2, password_hash = $3, status = $4, display_name = $5, daily_question_cap = $6
+		 WHERE id = $1`,
+		r.ID, nullable(NormalizeEmail(r.Email)), r.PasswordHash, r.Status, r.DisplayName, r.DailyQuestionCap)
+	if isUniqueViolation(err) {
+		return ErrEmailTaken
+	}
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (s *PG) TouchLogin(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `UPDATE runners SET last_login_at = now() WHERE id = $1`, id)
+	return err
+}
+
+func (s *PG) DeleteRunner(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, `DELETE FROM runners WHERE id = $1`, id)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// isUniqueViolation reports a Postgres unique_violation (23505).
+func isUniqueViolation(err error) bool {
+	return err != nil && contains(err.Error(), "SQLSTATE 23505")
 }
 
 func newSessionID() (string, error) {
@@ -50,10 +121,14 @@ func (s *PG) CreateSession(ctx context.Context, runnerID int64, ttl time.Duratio
 	return id, err
 }
 
+// LookupSession resolves a live session of an active runner; a disabled or
+// deleted runner's sessions stop working at once.
 func (s *PG) LookupSession(ctx context.Context, id string) (int64, error) {
 	var runnerID int64
 	err := s.pool.QueryRow(ctx,
-		`UPDATE sessions SET last_seen_at = now() WHERE id = $1 AND expires_at > now() RETURNING runner_id`, id,
+		`UPDATE sessions AS se SET last_seen_at = now() FROM runners AS r
+		 WHERE se.id = $1 AND se.expires_at > now() AND r.id = se.runner_id AND r.status = 'active'
+		 RETURNING se.runner_id`, id,
 	).Scan(&runnerID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNoSession
@@ -63,6 +138,11 @@ func (s *PG) LookupSession(ctx context.Context, id string) (int64, error) {
 
 func (s *PG) DeleteSession(ctx context.Context, id string) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE id = $1`, id)
+	return err
+}
+
+func (s *PG) DeleteSessionsFor(ctx context.Context, runnerID int64, keep string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM sessions WHERE runner_id = $1 AND id <> $2`, runnerID, keep)
 	return err
 }
 
@@ -213,6 +293,16 @@ func (s *PG) Usage(ctx context.Context, runnerID int64, day time.Time) (Usage, e
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Usage{}, nil
 	}
+	return u, err
+}
+
+func (s *PG) GlobalUsage(ctx context.Context, day time.Time) (Usage, error) {
+	var u Usage
+	err := s.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(questions), 0), COALESCE(SUM(input_tokens), 0),
+		        COALESCE(SUM(cached_input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+		 FROM usage_days WHERE day = $1 -- across all runners, for the global cap`, Day(day),
+	).Scan(&u.Questions, &u.InputTokens, &u.CachedInputTokens, &u.OutputTokens)
 	return u, err
 }
 

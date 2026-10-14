@@ -43,7 +43,6 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 		cfg:       cfg,
 		pool:      pool,
 		anthropic: anthropic.NewClient(option.WithAPIKey(cfg.AnthropicAPIKey)),
-		auth:      auth.OwnerPassword{Hash: []byte(cfg.OwnerPasswordHash), OwnerID: 1},
 		logins:    newLoginLimiter(5, time.Minute),
 	}
 	if pool != nil {
@@ -51,9 +50,10 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 	} else {
 		s.store = store.NewMemory()
 		if !cfg.MockMode {
-			log.Println("no database: chats are kept in memory until restart")
+			log.Println("no database: accounts and chats are kept in memory until restart")
 		}
 	}
+	s.auth = auth.EmailPassword{Runners: s.store}
 	if cfg.TokenKey != "" {
 		sealer, err := crypto.New(cfg.TokenKey)
 		if err != nil {
@@ -66,16 +66,42 @@ func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
 	if cfg.MockMode {
 		log.Printf("RUNCOACH_MOCK is set: canned answers, no login, no Garmin or Claude call")
 	} else {
-		if cfg.OwnerPasswordHash == "" {
-			log.Printf("RUNCOACH_OWNER_PASSWORD_HASH is not set: nobody can log in")
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
+		if err := s.bootstrapOwner(ctx); err != nil {
+			log.Printf("owner bootstrap: %v", err)
+		}
 		if err := s.importGarminBundle(ctx); err != nil {
 			log.Printf("garmin bundle import: %v", err)
 		}
 	}
 	return s
+}
+
+// bootstrapOwner applies RUNCOACH_OWNER_EMAIL and RUNCOACH_OWNER_PASSWORD_HASH
+// to the owner row where the row has none yet. It never overwrites: once the
+// owner has changed either on the account page, the env value is history.
+func (s *Server) bootstrapOwner(ctx context.Context) error {
+	owner, err := s.store.Owner(ctx)
+	if err != nil {
+		return err
+	}
+	changed := false
+	if owner.Email == "" && s.cfg.OwnerEmail != "" {
+		owner.Email, changed = s.cfg.OwnerEmail, true
+	}
+	if owner.PasswordHash == "" && s.cfg.OwnerPasswordHash != "" {
+		owner.PasswordHash, changed = s.cfg.OwnerPasswordHash, true
+	}
+	if changed {
+		if err := s.store.UpdateRunner(ctx, owner); err != nil {
+			return err
+		}
+	}
+	if owner.PasswordHash == "" {
+		log.Printf("the owner has no password: set RUNCOACH_OWNER_PASSWORD_HASH or run cmd/set-password")
+	}
+	return nil
 }
 
 // Routes returns the HTTP handler with all routes registered. The API lives

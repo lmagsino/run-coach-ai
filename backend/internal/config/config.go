@@ -23,8 +23,11 @@ type Config struct {
 	// image. The runner's token bundle is handed to it as GARMINTOKENS.
 	GarminMCPCommand string
 
-	// OwnerPasswordHash is the bcrypt hash the owner logs in with (ADR 0002).
-	// Empty means nobody can log in outside mock mode.
+	// OwnerEmail and OwnerPasswordHash bootstrap the owner's sign-in (ADR
+	// 0002, 0010): applied on start when the owner row has no email or no
+	// password yet. Afterwards the owner changes them on the account page or
+	// with cmd/set-password, and the env values are not re-applied.
+	OwnerEmail        string
 	OwnerPasswordHash string
 	// TokenKey seals the stored Garmin token bundle (ADR 0003). Base64 of 32
 	// random bytes; `go run ./cmd/token-key` prints one.

@@ -169,7 +169,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 // checkCap returns 429 once the runner has asked today's allowance. It is a
 // cost guard, so it counts questions asked, not answers delivered.
 func (s *Server) checkCap(ctx context.Context, runnerID int64) (int, error) {
-	owner, err := s.store.Owner(ctx)
+	runner, err := s.store.RunnerByID(ctx, runnerID)
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
@@ -177,7 +177,7 @@ func (s *Server) checkCap(ctx context.Context, runnerID int64) (int, error) {
 	if err != nil {
 		return http.StatusInternalServerError, err
 	}
-	if usage.Questions >= owner.DailyQuestionCap {
+	if usage.Questions >= runner.DailyQuestionCap {
 		return http.StatusTooManyRequests, errors.New("daily cap reached; it resets at midnight UTC")
 	}
 	return 0, nil

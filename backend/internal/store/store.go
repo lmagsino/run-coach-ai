@@ -8,13 +8,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
 // Errors callers branch on.
 var (
-	ErrNotFound  = errors.New("store: not found")
-	ErrNoSession = errors.New("store: no such session")
+	ErrNotFound   = errors.New("store: not found")
+	ErrNoSession  = errors.New("store: no such session")
+	ErrEmailTaken = errors.New("store: email already registered")
+)
+
+// Runner kinds and statuses (CONTEXT.md).
+const (
+	KindOwner  = "owner"
+	KindMember = "member"
+
+	StatusActive   = "active"
+	StatusDisabled = "disabled"
 )
 
 // Garmin connection states shown on the chip (CONTEXT.md).
@@ -31,8 +42,13 @@ const ConnectionLocalTokens = "local_tokens"
 type Runner struct {
 	ID               int64
 	Kind             string
+	Email            string // lowercased; empty for an owner without one
+	PasswordHash     string // bcrypt; empty means this runner cannot sign in
+	Status           string
 	DisplayName      string
 	DailyQuestionCap int
+	CreatedAt        time.Time
+	LastLoginAt      *time.Time
 }
 
 type Chat struct {
@@ -76,10 +92,24 @@ type Usage struct {
 // Store is everything the API needs to remember.
 type Store interface {
 	Owner(ctx context.Context) (Runner, error)
+	RunnerByID(ctx context.Context, id int64) (Runner, error)
+	RunnerByEmail(ctx context.Context, email string) (Runner, error)
+	// CreateRunner inserts a runner and returns it with its id; ErrEmailTaken
+	// when the email is already registered.
+	CreateRunner(ctx context.Context, r Runner) (Runner, error)
+	// UpdateRunner writes email, password hash, status, display name and cap
+	// for the runner with r.ID.
+	UpdateRunner(ctx context.Context, r Runner) error
+	TouchLogin(ctx context.Context, id int64) error
+	// DeleteRunner removes the runner and, by cascade, everything it owns:
+	// sessions, chats, messages, usage and the Garmin connection.
+	DeleteRunner(ctx context.Context, id int64) error
 
 	CreateSession(ctx context.Context, runnerID int64, ttl time.Duration) (string, error)
 	LookupSession(ctx context.Context, id string) (int64, error)
 	DeleteSession(ctx context.Context, id string) error
+	// DeleteSessionsFor signs a runner out everywhere except keep.
+	DeleteSessionsFor(ctx context.Context, runnerID int64, keep string) error
 
 	ListChats(ctx context.Context, runnerID int64) ([]Chat, error)
 	CreateChat(ctx context.Context, runnerID int64, title string) (Chat, error)
@@ -97,8 +127,15 @@ type Store interface {
 
 	Usage(ctx context.Context, runnerID int64, day time.Time) (Usage, error)
 	AddUsage(ctx context.Context, runnerID int64, day time.Time, add Usage) error
+	// GlobalUsage sums a day's usage across every runner, for the global cap.
+	GlobalUsage(ctx context.Context, day time.Time) (Usage, error)
 
 	Audit(ctx context.Context, runnerID int64, action string, detail any) error
+}
+
+// NormalizeEmail is the one form an email is stored and looked up in.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
 }
 
 // Day truncates a time to the UTC date the usage counters key on. The cap
