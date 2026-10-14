@@ -149,7 +149,7 @@ Then for real, locally:
 cd backend
 cp .env.example .env                                    # ANTHROPIC_API_KEY, GARMIN_MCP_COMMAND, GARMIN_EMAIL/PASSWORD, then:
 go run ./cmd/token-key                                  #   RUNCOACH_TOKEN_KEY
-echo -n 'your password' | go run ./cmd/hash-password    #   RUNCOACH_OWNER_PASSWORD_HASH (keep the quotes)
+                                                        #   RUNCOACH_OWNER_EMAIL and RUNCOACH_OWNER_PASSWORD
 
 cd ../deploy/garmin-mcp
 docker compose build garmin-mcp                         # garmin_mcp at the pinned commit
@@ -229,7 +229,7 @@ cat garmin_tokens.b64 | pbcopy && rm garmin_tokens.b64
 
 ## Deploy, free
 
-`Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and set `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_PASSWORD_HASH`, `RUNCOACH_TOKEN_KEY` and `RUNCOACH_GARMIN_BUNDLE` (the line `bundle.sh` prints) in the dashboard. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
+`Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and enter four values when Render asks: `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_EMAIL` and `RUNCOACH_OWNER_PASSWORD`. Render generates `RUNCOACH_TOKEN_KEY` itself. Optionally add `RUNCOACH_GARMIN_BUNDLE` (the line `bundle.sh` prints) so your Garmin is connected from the first start. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
 
 ## Tests, with no credentials and no network
 

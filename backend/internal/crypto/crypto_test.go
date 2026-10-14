@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"bytes"
+	"encoding/base64"
 	"testing"
 )
 
@@ -55,4 +56,16 @@ func mustKey(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return k
+}
+
+func TestKeyInEveryBase64Alphabet(t *testing.T) {
+	raw := make([]byte, 32)
+	for i := range raw {
+		raw[i] = byte(250 + i) // high bytes, so the URL and standard alphabets differ
+	}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if _, err := New(enc.EncodeToString(raw)); err != nil {
+			t.Errorf("%q: %v", enc.EncodeToString(raw), err)
+		}
+	}
 }

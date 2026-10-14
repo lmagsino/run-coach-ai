@@ -20,7 +20,9 @@ services:
         value: medium
       - key: RUNCOACH_OWNER_EMAIL
         sync: false
-      - key: RUNCOACH_OWNER_PASSWORD_HASH
+      # Your sign-in password, typed here; it is hashed on first start and can be
+      # changed on the account page afterwards.
+      - key: RUNCOACH_OWNER_PASSWORD
         sync: false
       # Leave unset to keep sign-up closed; set it to invite other runners.
       - key: RUNCOACH_INVITE_CODE
@@ -29,8 +31,9 @@ services:
         value: "10"
       - key: RUNCOACH_GLOBAL_DAILY_CAP
         value: "100"
+      # Render makes this once. Keep it: a new key cannot open stored Garmin tokens.
       - key: RUNCOACH_TOKEN_KEY
-        sync: false
+        generateValue: true
       - key: GARMIN_MCP_COMMAND
         value: garmin-mcp
       # Optional: the one-line bundle from deploy/garmin-mcp/bundle.sh, so the

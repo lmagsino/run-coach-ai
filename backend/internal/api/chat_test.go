@@ -515,3 +515,11 @@ func TestCORSOffByDefault(t *testing.T) {
 }
 
 var _ = store.ErrNotFound
+
+func TestOwnerSignsInWithAPlainPasswordFromTheEnvironment(t *testing.T) {
+	const password = "typed into the host"
+	s := New(&config.Config{OwnerEmail: "leo@example.com", OwnerPassword: password}, nil)
+	if rec := do(t, s, http.MethodPost, "/api/login", `{"email":"leo@example.com","password":"`+password+`"}`); rec.Code != http.StatusOK {
+		t.Fatalf("login with the plain env password: %d %s", rec.Code, rec.Body)
+	}
+}

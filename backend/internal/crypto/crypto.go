@@ -20,11 +20,12 @@ var ErrBadKey = errors.New("crypto: RUNCOACH_TOKEN_KEY must be 32 random bytes, 
 // Sealer holds the key.
 type Sealer struct{ aead cipher.AEAD }
 
-// New parses a base64 32-byte key.
+// New parses a base64 32-byte key, in any of the four base64 alphabets, so a
+// key a host generates (Render's generateValue) works as well as cmd/token-key's.
 func New(base64Key string) (*Sealer, error) {
-	key, err := base64.StdEncoding.DecodeString(base64Key)
-	if err != nil || len(key) != 32 {
-		return nil, ErrBadKey
+	key, err := decodeKey(base64Key)
+	if err != nil {
+		return nil, err
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -73,4 +74,13 @@ func (s *Sealer) Open(blob []byte) ([]byte, error) {
 		return nil, errors.New("crypto: cannot open blob (wrong key or tampered)")
 	}
 	return plain, nil
+}
+
+func decodeKey(s string) ([]byte, error) {
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if key, err := enc.DecodeString(s); err == nil && len(key) == 32 {
+			return key, nil
+		}
+	}
+	return nil, ErrBadKey
 }

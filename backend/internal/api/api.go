@@ -92,6 +92,12 @@ func (s *Server) bootstrapOwner(ctx context.Context) error {
 	}
 	if owner.PasswordHash == "" && s.cfg.OwnerPasswordHash != "" {
 		owner.PasswordHash, changed = s.cfg.OwnerPasswordHash, true
+	} else if owner.PasswordHash == "" && s.cfg.OwnerPassword != "" {
+		hash, err := auth.HashPassword(s.cfg.OwnerPassword)
+		if err != nil {
+			return err
+		}
+		owner.PasswordHash, changed = hash, true
 	}
 	if changed {
 		if err := s.store.UpdateRunner(ctx, owner); err != nil {

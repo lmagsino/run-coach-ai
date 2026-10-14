@@ -217,10 +217,10 @@ See `backend/.env.example`. Summary:
 | `PORT` | HTTP port (default 8787 locally; hosts set their own). Not 8080: on the work laptop a security agent stalls PATCH requests to localhost:8080 |
 | `DATABASE_URL` | Postgres connection string. **Optional** until Phase 7; unset ⇒ `/healthz` says `db: off` |
 | `GARMIN_MCP_COMMAND` | Command to launch garmin-mcp (default `garmin-mcp`; local dev: the Docker image). The stored bundle is passed as `GARMINTOKENS` |
-| `RUNCOACH_OWNER_EMAIL` / `RUNCOACH_OWNER_PASSWORD_HASH` | The owner's sign-in, applied only where the owner row has none (ADR 0010). Quote the hash |
+| `RUNCOACH_OWNER_EMAIL` / `RUNCOACH_OWNER_PASSWORD` (or `_HASH`) | The owner's sign-in, applied only where the owner row has none (ADR 0010). The plain password is hashed on start; the hash wins when both are set. Quote the hash |
 | `RUNCOACH_INVITE_CODE` | Opens sign-up for other runners. Unset ⇒ sign-up closed |
 | `RUNCOACH_MEMBER_CAP` / `RUNCOACH_GLOBAL_DAILY_CAP` | Daily questions for a new member (10) and for everyone together (100; 0 = off) |
-| `RUNCOACH_TOKEN_KEY` | base64 32-byte key sealing the stored bundle (`cmd/token-key`) |
+| `RUNCOACH_TOKEN_KEY` | base64 32-byte key sealing the stored bundle (`cmd/token-key` locally; Render generates it). A new key cannot open stored bundles |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | Read only by the one-off `garmin-mcp-auth` step via compose. The server never reads them and never passes them to the child |
 | `GARMIN_IS_CN` | `true` only for Garmin Connect China |
 | `ANTHROPIC_API_KEY` | Claude API access |

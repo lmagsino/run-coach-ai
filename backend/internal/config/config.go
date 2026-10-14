@@ -38,6 +38,9 @@ type Config struct {
 	// with cmd/set-password, and the env values are not re-applied.
 	OwnerEmail        string
 	OwnerPasswordHash string
+	// OwnerPassword is the plain alternative to the hash, so a host's secret
+	// settings can take the password itself. The hash wins when both are set.
+	OwnerPassword string
 
 	// InviteCode gates sign-up (ADR 0010): a new runner must type it. Empty
 	// means sign-up is closed. Every reply is billed to one API key, so this
@@ -96,6 +99,7 @@ func Load() (*Config, error) {
 		GarminMCPCommand:     getenv("GARMIN_MCP_COMMAND", "garmin-mcp"),
 		OwnerEmail:           os.Getenv("RUNCOACH_OWNER_EMAIL"),
 		OwnerPasswordHash:    os.Getenv("RUNCOACH_OWNER_PASSWORD_HASH"),
+		OwnerPassword:        os.Getenv("RUNCOACH_OWNER_PASSWORD"),
 		InviteCode:           strings.TrimSpace(os.Getenv("RUNCOACH_INVITE_CODE")),
 		MemberCap:            getenvInt("RUNCOACH_MEMBER_CAP", 10),
 		GlobalDailyCap:       getenvInt("RUNCOACH_GLOBAL_DAILY_CAP", 100),
