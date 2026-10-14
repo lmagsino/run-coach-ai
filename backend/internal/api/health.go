@@ -10,7 +10,7 @@ import (
 // state read from its row (no Garmin call, no secrets). The host's health
 // check hits it every few seconds, so it has to stay cheap.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
-	out := map[string]any{"status": "ok", "db": "off"}
+	out := map[string]any{"status": "ok", "db": "off", "signup": s.signupOpen()}
 	if s.pool != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()

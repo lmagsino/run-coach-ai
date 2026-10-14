@@ -43,7 +43,8 @@ async function request(method, path, body) {
 export const api = {
   health: () => request('GET', '/healthz'),
   me: () => request('GET', '/me'),
-  login: (password) => request('POST', '/login', { password }),
+  login: (email, password) => request('POST', '/login', { email, password }),
+  signup: (fields) => request('POST', '/signup', fields),
   logout: () => request('POST', '/logout', {}),
   listChats: () => request('GET', '/chats').then((d) => d.chats ?? []),
   createChat: () => request('POST', '/chats', {}),

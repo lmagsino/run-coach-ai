@@ -13,7 +13,7 @@ const router = useRouter()
 const session = useSession()
 const chats = useChats()
 
-const bare = computed(() => route.name === 'login')
+const bare = computed(() => route.name === 'login' || route.name === 'signup')
 const drawer = ref(false)
 const currentId = computed(() => (route.name === 'chat' ? String(route.params.id) : ''))
 const error = ref('')

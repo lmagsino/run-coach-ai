@@ -22,8 +22,13 @@ export function useSession() {
     }
   }
 
-  async function login(password) {
-    await api.login(password)
+  async function login(email, password) {
+    await api.login(email, password)
+    await load()
+  }
+
+  async function signup(fields) {
+    await api.signup(fields)
     await load()
   }
 
@@ -39,6 +44,7 @@ export function useSession() {
   const garmin = computed(() => me.value?.garmin ?? { status: 'none' })
   const usage = computed(() => me.value?.usage ?? { today: 0, cap: 0 })
   const mock = computed(() => Boolean(me.value?.mock))
+  const runner = computed(() => me.value?.runner ?? null)
 
-  return { me, loaded, unauthorized, garmin, usage, mock, load, login, logout }
+  return { me, loaded, unauthorized, garmin, usage, mock, runner, load, login, signup, logout }
 }

@@ -33,7 +33,7 @@ func runnerID(r *http.Request) int64 {
 func (s *Server) withSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.URL.Path == "/api/login" || r.URL.Path == "/api/healthz":
+		case r.URL.Path == "/api/login" || r.URL.Path == "/api/signup" || r.URL.Path == "/api/healthz":
 			next.ServeHTTP(w, r)
 			return
 		case s.cfg.MockMode:

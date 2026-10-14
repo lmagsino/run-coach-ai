@@ -4,6 +4,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -29,6 +30,13 @@ type Config struct {
 	// with cmd/set-password, and the env values are not re-applied.
 	OwnerEmail        string
 	OwnerPasswordHash string
+
+	// InviteCode gates sign-up (ADR 0010): a new runner must type it. Empty
+	// means sign-up is closed. Every reply is billed to one API key, so this
+	// is the first of the cost guards; MemberCap is the second.
+	InviteCode string
+	// MemberCap is the daily question cap a new member starts with.
+	MemberCap int
 	// TokenKey seals the stored Garmin token bundle (ADR 0003). Base64 of 32
 	// random bytes; `go run ./cmd/token-key` prints one.
 	TokenKey string
@@ -93,6 +101,13 @@ func truthy(v string) bool {
 		return true
 	}
 	return false
+}
+
+func getenvInt(key string, fallback int) int {
+	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key))); err == nil && v >= 0 {
+		return v
+	}
+	return fallback
 }
 
 func getenv(key, fallback string) string {

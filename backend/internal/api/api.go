@@ -110,6 +110,7 @@ func (s *Server) Routes() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/healthz", s.handleHealthz)
 	api.HandleFunc("POST /api/login", s.handleLogin)
+	api.HandleFunc("POST /api/signup", s.handleSignup)
 	api.HandleFunc("POST /api/logout", s.handleLogout)
 	api.HandleFunc("GET /api/me", s.handleMe)
 	api.HandleFunc("POST /api/garmin/tokens", s.handleGarminTokens)

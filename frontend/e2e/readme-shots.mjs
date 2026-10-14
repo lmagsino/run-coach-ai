@@ -64,6 +64,7 @@ if (mode === 'chat') {
   await page.goto(new URL('/login', APP).toString(), { waitUntil: 'networkidle' })
   await page.waitForSelector('#password', { timeout: 10000 })
   await page.screenshot({ path: `${OUT}/login.png` })
+  if (process.env.READMESHOT_EMAIL) await page.fill('#email', process.env.READMESHOT_EMAIL)
   await page.fill('#password', process.env.READMESHOT_PASSWORD ?? 'runcoach')
   await page.press('#password', 'Enter')
   await page.waitForURL((u) => !u.pathname.startsWith('/login'))
