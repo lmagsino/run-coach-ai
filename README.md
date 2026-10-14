@@ -165,26 +165,72 @@ Open the UI, sign in, and ask. When the bundle expires, about six months later, 
 
 Pricing is per token, so every question has a price. Measured on the question above, on Sonnet 5.5: about 8k input tokens, 59k read from cache at a tenth of the price, 1k output, roughly five cents. The triage step on Haiku is a fraction of that, the daily cap is 30 questions, and `ANTHROPIC_MODEL` switches between Haiku, Sonnet and Opus with no other change.
 
-### For other runners
+## Guide: inviting other runners
 
-RunCoach takes other runners by invite. Set `RUNCOACH_INVITE_CODE` and share it with them; they create an account with their email, a password and the code. Each runner then connects their own Garmin from the account page by making a token bundle on their own computer, with no clone of this repo:
+RunCoach takes other runners by invite. Each runner has their own account, chats and Garmin connection; their Garmin password never reaches the server; and every runner's questions are billed to the owner's API key, so caps keep the bill bounded ([ADR 0010](docs/adr/0010-other-runners-by-invite-with-a-pasted-bundle.md)). Everything below was run against a real server, a Postgres database and a real Garmin account before it was written down ([test report](docs/live/phase-9.md)).
+
+### For the owner: open sign-up
+
+1. Pick an invite code and set it on the server: `RUNCOACH_INVITE_CODE=…` in `backend/.env` locally, or in Render's dashboard when hosted. Restart. Without a code, sign-up is closed and the sign-in page shows no "Create an account" link.
+2. Share the site's address and the code with the runner.
+3. Optionally set the caps: `RUNCOACH_MEMBER_CAP` (questions a day for each new member, default 10) and `RUNCOACH_GLOBAL_DAILY_CAP` (all runners together, default 100). The owner keeps 30.
+
+### For a runner: get started
+
+**1. Create an account** with your name, email, a password of 10 characters or more, and the invite code. You land on your account page.
+
+<img src="docs/screenshots/guide-1-signup.png" alt="The sign-up form: name, email, password and invite code" width="720">
+
+**2. Make a Garmin token bundle on your own computer.** The account page shows two ways, each with a copy button. Both ask for your Garmin email, password and MFA code on your machine, and print one line of text, the bundle. Nothing to clone.
 
 ```bash
+# with uv (https://docs.astral.sh/uv)
 uvx --from "garmin-mcp @ git+https://github.com/Taxuspt/garmin_mcp@43b0c5b375fc1c7bd6bdbead69968dfabddec265" garmin-mcp-auth
-cat ~/.garminconnect_base64 | pbcopy        # then paste it on the account page
+cat ~/.garminconnect_base64 | pbcopy        # Windows: | clip
+
+# or with Docker, using the image this repo publishes
+docker run -it --rm -v "$PWD:/out" -e GARMINTOKENS_BASE64=/out/garmin_tokens.b64 \
+  --entrypoint garmin-mcp-auth ghcr.io/lmagsino/garmin-mcp:43b0c5b
+cat garmin_tokens.b64 | pbcopy && rm garmin_tokens.b64
 ```
 
-or with Docker, using the image this repo publishes (`ghcr.io/lmagsino/garmin-mcp`). Their Garmin password stays on their computer; the server only ever holds the encrypted bundle, and deleting the account deletes it. Every runner's questions are billed to your API key, so members get 10 questions a day by default and a global cap of 100 a day sits above everyone ([ADR 0010](docs/adr/0010-other-runners-by-invite-with-a-pasted-bundle.md)).
+<img src="docs/screenshots/guide-2-connect.png" alt="The Garmin section of the account page: not connected, the uv and Docker commands, and the paste box" width="900">
 
-<p>
-<img src="docs/screenshots/account.png" alt="The account page: name, today's usage, and the Garmin section with the uv and Docker commands for making a token bundle" width="900">
-</p>
+**3. Paste the bundle and press "Save and check".** The server reads your Garmin profile once to prove the bundle works, stores it encrypted, and the chip turns to "Garmin connected" with the date the tokens expire, about six months out.
 
-### Deploy, free
+<img src="docs/screenshots/guide-3-connected.png" alt="Garmin connected, tokens expire about 14 Apr 2027" width="900">
+
+**4. Ask.** Replies come from your own Garmin data only, with the numbers and dates they rest on. Your chats are yours: another runner gets "not found" even with the link.
+
+<img src="docs/screenshots/guide-5-after-restart.png" alt="A real reply to 'How did I sleep this week?' from the runner's own Garmin data, still there after a server restart" width="900">
+
+**On the phone** everything works the same; the chat list opens from the menu.
+
+<img src="docs/screenshots/guide-phone-account.png" alt="The account page on a phone" width="300">
+
+### Limits and account settings
+
+- **Daily questions.** When a runner has used their questions for the day, the composer closes and says so before anything is sent; it reopens at midnight UTC. When the whole coach reaches the global cap, everyone sees the same.
+
+  <img src="docs/screenshots/guide-cap.png" alt="At the daily cap the composer is closed: 'You have used today's 10 questions. They reset at midnight UTC.'" width="900">
+
+- **Name and password** change on the account page. Changing the password signs the runner out on every other device.
+- **Expired Garmin tokens.** The chip says "tokens expired"; make a new bundle (step 2) and paste it again.
+- **Deleting an account** takes the runner's chats, usage and Garmin bundle with it, at once and for good. It asks for the password and a second confirmation. The owner's account cannot be deleted.
+
+  <img src="docs/screenshots/guide-delete.png" alt="Delete account, with the password typed and the second confirmation button" width="900">
+
+- **A forgotten password.** There is no reset email. The owner sets a new one from the server's terminal, which also signs that runner out everywhere:
+
+  ```bash
+  echo -n 'a new password' | go run ./cmd/set-password ana@example.com
+  ```
+
+## Deploy, free
 
 `Dockerfile` builds one image (the Vue build embedded in the Go binary, `garmin-mcp` installed beside it) and [`render.yaml`](render.yaml) describes one Render free web service with `/healthz` as its health check. Pair it with a Neon free Postgres and set `DATABASE_URL`, `ANTHROPIC_API_KEY`, `RUNCOACH_OWNER_PASSWORD_HASH`, `RUNCOACH_TOKEN_KEY` and `RUNCOACH_GARMIN_BUNDLE` (the line `bundle.sh` prints) in the dashboard. Migrations run on start. The free service sleeps when idle and takes about a minute to wake; the login page says so while it waits.
 
-### Tests, with no credentials and no network
+## Tests, with no credentials and no network
 
 ```bash
 cd backend && go test ./...
