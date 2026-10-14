@@ -45,8 +45,8 @@ walkthroughs, and a build of the deploy image). Nothing is hosted yet.
    that Garmin's Cloudflare edge throttles server sign-ins per IP and that free hosts share
    egress IPs, so expect it may be refused. Try once with Leo's account after deploying. If it
    is refused, the page opens the token paste and nothing else changes.
-5. **8.3:** opt-in live Garmin tool check (`RUNCOACH_LIVE_GARMIN_TESTS=1`): proves the read-only
-   filter against the real tool list; results into `docs/live/phase-8.md`. Not written yet.
+5. **8.3:** the live Garmin tool check passed on the laptop (155 tools match, 77 exposed, all
+   reads; [docs/live/phase-8.md](docs/live/phase-8.md)). Left: one Garmin sign-in from Render.
 6. **8.4:** live pass from the phone on the hosted app, measured (time, tokens, cost, charts).
 7. **8.5:** fix what the live pass finds; finish the README.
 8. Try the sign-in locally first: rebuild the local Garmin image (`cd deploy/garmin-mcp && docker compose build garmin-mcp`) so

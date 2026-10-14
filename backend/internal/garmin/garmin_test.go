@@ -88,6 +88,10 @@ func TestDisplayName(t *testing.T) {
 	if got := displayName(`{"displayName":"leo","id":1}`); got != "leo" {
 		t.Errorf("got %q", got)
 	}
+	// get_full_name's shape, which the probe asks for because the profile has no name.
+	if got := displayName(`{"full_name": "Leo M"}`); got != "Leo M" {
+		t.Errorf("full_name: got %q", got)
+	}
 	if got := displayName(`not json`); got != "" {
 		t.Errorf("got %q", got)
 	}

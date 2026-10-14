@@ -41,8 +41,12 @@ var (
 // credentials"); the chip shows the estimate and a real auth error overrides it.
 const TokenLifetime = 182 * 24 * time.Hour
 
-// ProbeTool is the cheapest read that proves a bundle works.
-const ProbeTool = "get_user_profile"
+// ProbeTool is the cheapest read that proves a bundle works. Its settings carry
+// no name, so NameTool is asked once it has passed.
+const (
+	ProbeTool = "get_user_profile"
+	NameTool  = "get_full_name"
+)
 
 // LocalSpawn runs garmin-mcp as a subprocess for each reply.
 //
@@ -131,7 +135,25 @@ func probe(ctx context.Context, session *mcp.ClientSession) (string, error) {
 	if res.IsError || mcpclient.LooksLikeError(text.String()) {
 		return "", Classify(errors.New(text.String()))
 	}
-	return displayName(text.String()), nil
+	if name := displayName(text.String()); name != "" {
+		return name, nil
+	}
+	return fullName(ctx, session), nil
+}
+
+// fullName asks for the runner's name for the "Connected as" line. The bundle
+// has already passed, so a failure here only leaves the name out.
+func fullName(ctx context.Context, session *mcp.ClientSession) string {
+	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: NameTool, Arguments: map[string]any{}})
+	if err != nil || res.IsError {
+		return ""
+	}
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			return displayName(tc.Text)
+		}
+	}
+	return ""
 }
 
 // Classify turns an error from the child into the state the chip shows.
@@ -202,7 +224,7 @@ func displayName(profileJSON string) string {
 	if err := json.Unmarshal([]byte(profileJSON), &v); err != nil {
 		return ""
 	}
-	for _, k := range []string{"displayName", "fullName", "userName", "display_name"} {
+	for _, k := range []string{"displayName", "fullName", "full_name", "userName", "display_name"} {
 		if s, ok := v[k].(string); ok && s != "" {
 			return s
 		}
