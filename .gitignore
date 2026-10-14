@@ -30,3 +30,6 @@ backend/internal/web/dist/*
 
 # The Garmin token bundle the laptop sign-in leaves for the server to import.
 backend/.garmin_bundle.b64
+
+# Raw Playwright recordings; only the GIF made from one is committed.
+docs/screenshots/*.webm
