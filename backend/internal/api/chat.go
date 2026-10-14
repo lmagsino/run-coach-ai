@@ -129,6 +129,11 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
+	// Before triage, which is itself a model call.
+	if !s.cfg.MockMode && s.cfg.AnthropicAPIKey == "" {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "ANTHROPIC_API_KEY is not set"})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), chatTimeout)
 	defer cancel()
@@ -179,6 +184,18 @@ func (s *Server) checkCap(ctx context.Context, runnerID int64) (int, error) {
 	}
 	if usage.Questions >= runner.DailyQuestionCap {
 		return http.StatusTooManyRequests, errors.New("daily cap reached; it resets at midnight UTC")
+	}
+	// Every runner's questions are billed to one key, so the server has a
+	// ceiling of its own above the per-runner caps (ADR 0010).
+	if s.cfg.GlobalDailyCap > 0 {
+		total, err := s.store.GlobalUsage(ctx, time.Now())
+		if err != nil {
+			return http.StatusInternalServerError, err
+		}
+		if total.Questions >= s.cfg.GlobalDailyCap {
+			log.Printf("global daily cap reached (%d questions)", total.Questions)
+			return http.StatusTooManyRequests, errors.New("the coach has answered all the questions it can today; it resets at midnight UTC")
+		}
 	}
 	return 0, nil
 }

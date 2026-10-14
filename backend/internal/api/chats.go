@@ -244,6 +244,6 @@ func (s *Server) finishReply(ctx context.Context, runnerID int64, chatID string,
 		ChatID: chatID, Role: "assistant", Content: resp.Answer, ToolCalls: toolCalls, Chart: chartJSON,
 	})
 	_ = s.store.AddUsage(ctx, runnerID, time.Now(), usageOf(result))
-	log.Printf("reply: %d tool calls, chart=%t, tokens in=%d cached=%d out=%d",
-		len(result.ToolCalls), resp.Chart != nil, result.Usage.InputTokens, result.Usage.CachedInputTokens, result.Usage.OutputTokens)
+	log.Printf("reply: runner=%d, %d tool calls, chart=%t, tokens in=%d cached=%d out=%d",
+		runnerID, len(result.ToolCalls), resp.Chart != nil, result.Usage.InputTokens, result.Usage.CachedInputTokens, result.Usage.OutputTokens)
 }

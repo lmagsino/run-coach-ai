@@ -40,6 +40,9 @@ type Config struct {
 	InviteCode string
 	// MemberCap is the daily question cap a new member starts with.
 	MemberCap int
+	// GlobalDailyCap bounds questions across every runner in a UTC day, the
+	// last line under the API bill. 0 or less turns it off.
+	GlobalDailyCap int
 	// TokenKey seals the stored Garmin token bundle (ADR 0003). Base64 of 32
 	// random bytes; `go run ./cmd/token-key` prints one.
 	TokenKey string
@@ -85,6 +88,7 @@ func Load() (*Config, error) {
 		OwnerPasswordHash:    os.Getenv("RUNCOACH_OWNER_PASSWORD_HASH"),
 		InviteCode:           strings.TrimSpace(os.Getenv("RUNCOACH_INVITE_CODE")),
 		MemberCap:            getenvInt("RUNCOACH_MEMBER_CAP", 10),
+		GlobalDailyCap:       getenvInt("RUNCOACH_GLOBAL_DAILY_CAP", 100),
 		TokenKey:             os.Getenv("RUNCOACH_TOKEN_KEY"),
 		GarminBundle:         os.Getenv("RUNCOACH_GARMIN_BUNDLE"),
 		GarminBundleFile:     getenv("RUNCOACH_GARMIN_BUNDLE_FILE", ".garmin_bundle.b64"),

@@ -24,11 +24,12 @@ func TestAccountSettingsFromEnv(t *testing.T) {
 	t.Setenv("RUNCOACH_OWNER_PASSWORD_HASH", "$2a$10$hash")
 	t.Setenv("RUNCOACH_INVITE_CODE", "  run-with-leo ")
 	t.Setenv("RUNCOACH_MEMBER_CAP", "7")
+	t.Setenv("RUNCOACH_GLOBAL_DAILY_CAP", "40")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.OwnerEmail != "leo@example.com" || cfg.OwnerPasswordHash != "$2a$10$hash" || cfg.InviteCode != "run-with-leo" || cfg.MemberCap != 7 {
+	if cfg.OwnerEmail != "leo@example.com" || cfg.OwnerPasswordHash != "$2a$10$hash" || cfg.InviteCode != "run-with-leo" || cfg.MemberCap != 7 || cfg.GlobalDailyCap != 40 {
 		t.Errorf("config: %+v", cfg)
 	}
 	t.Setenv("RUNCOACH_MEMBER_CAP", "not a number")

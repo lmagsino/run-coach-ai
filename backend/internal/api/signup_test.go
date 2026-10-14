@@ -20,7 +20,7 @@ func openServer(t *testing.T) *Server {
 	}
 	return New(&config.Config{
 		OwnerEmail: "leo@example.com", OwnerPasswordHash: hash,
-		InviteCode: testInvite, MemberCap: 10,
+		InviteCode: testInvite, MemberCap: 10, GlobalDailyCap: 100,
 	}, nil)
 }
 
