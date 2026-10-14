@@ -69,10 +69,15 @@ async function deleteAccount() {
   }
 }
 
+// Scroll only this page's own scroll area to the section: scrollIntoView
+// would also scroll the document and push the header off screen.
+const scroller = ref(null)
 onMounted(async () => {
-  if (route.hash) {
-    await nextTick()
-    document.querySelector(route.hash)?.scrollIntoView({ block: 'start' })
+  if (!route.hash) return
+  await nextTick()
+  const target = document.querySelector(route.hash)
+  if (target && scroller.value) {
+    scroller.value.scrollTop = target.offsetTop - scroller.value.offsetTop - 16
   }
 })
 
@@ -84,7 +89,7 @@ const section = 'border-t border-line pt-7 mt-7'
 </script>
 
 <template>
-  <main class="flex-1 overflow-y-auto px-[18px] pt-[30px] pb-[40px] wide:px-7 wide:pt-11">
+  <main ref="scroller" class="min-h-0 flex-1 overflow-y-auto px-[18px] pt-[30px] pb-[40px] wide:px-7 wide:pt-11">
     <div class="mx-auto max-w-measure">
       <p class="mb-3 font-display text-[10px] font-semibold tracking-[.2em] text-muted uppercase">Account</p>
       <h1 class="m-0 font-display text-[22px] font-semibold -tracking-[.02em]">{{ runner.display_name }}</h1>

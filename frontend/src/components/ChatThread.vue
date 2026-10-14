@@ -34,7 +34,7 @@ watch(
 <template>
   <main
     ref="scroller"
-    class="flex-1 overflow-y-auto px-[18px] pt-[30px] pb-[22px] wide:px-7 wide:pt-11 wide:pb-[30px]"
+    class="min-h-0 flex-1 overflow-y-auto px-[18px] pt-[30px] pb-[22px] wide:px-7 wide:pt-11 wide:pb-[30px]"
   >
     <div class="mx-auto flex max-w-measure flex-col gap-10">
       <div v-if="!turns.length && greeting" class="max-w-full">

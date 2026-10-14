@@ -90,7 +90,7 @@ async function signOut() {
       <button type="button" class="flex-1 cursor-default bg-ink/20" aria-label="Close chats" @click="drawer = false" />
     </div>
 
-    <div class="flex min-w-0 flex-1 flex-col">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <AppHeader :garmin="session.garmin.value.status" :mock="session.mock.value" :error="error" @menu="drawer = true" />
       <router-view />
     </div>
