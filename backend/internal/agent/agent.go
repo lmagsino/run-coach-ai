@@ -77,6 +77,7 @@ const chartRules = `Charts (tool coach__show_chart):
 - Defaults by question: training or runs over a period → distance per run (bars, x = date, data activities); sleep → hours per night (bars, data sleep); recovery or overtraining → HRV or readiness per day (line); sleep vs pace → scatter of sleep against next-day pace; training blocks → distance per week (bars).
 - Put the values in the chart, not in the prose. The prose names the pattern and the one or two numbers that matter.
 - One chart at most. Never chart a single number; use the figure line for that.
+- If the data cannot make a chart (too few points), just answer. Never mention charts, tools, limits or how you work; the runner sees only the answer.
 - Reshape the data yourself into the points: one point per run, night or week. Pace goes in seconds per kilometre with y_unit "min/km".
 - Two line series only when they share a unit. Two measures on different units are two charts; pick the one that carries the answer.
 - Call the chart tool before writing the prose, after the data tools. The prose must still stand on its own if the chart is dropped.`

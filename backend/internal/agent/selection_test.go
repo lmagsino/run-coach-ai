@@ -236,7 +236,7 @@ func TestSystemPromptDescribesRegisteredSourcesOnly(t *testing.T) {
 	gateway, garmin, _, _ := stubbedSources(t)
 
 	both := New(anthropic.Client{}, "test-model", gateway, garmin).systemPrompt()
-	for _, want := range []string{"- gateway —", "- garmin —", "sleep", "Finding the right Garmin tool", "Defaults by question"} {
+	for _, want := range []string{"- gateway —", "- garmin —", "sleep", "Finding the right Garmin tool", "Defaults by question", "Never mention charts, tools"} {
 		if !strings.Contains(both, want) {
 			t.Errorf("two-source prompt is missing %q:\n%s", want, both)
 		}
