@@ -1,0 +1,22 @@
+name: app image
+
+# Builds the image Render deploys (the root Dockerfile) on every push, without
+# pushing it anywhere, so a broken build shows up here rather than as a failed
+# deploy. Kept out of ci.yml, whose checks never need Docker.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

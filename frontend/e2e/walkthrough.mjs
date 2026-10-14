@@ -3,11 +3,9 @@
 // in-memory store. Nothing is stubbed in the browser except the two deliberate
 // failure injections at the end.
 //
-// Not run in CI: it needs a browser and a running backend. Run it by hand before
-// merging UI changes.
+// CI runs it on every push (e2e-walkthrough). By hand:
 //
-//   cd backend && RUNCOACH_MOCK=1 go run ./cmd/server
-//   cd frontend && npm run dev
+//   RUNCOACH_MOCK=1 bin/dev
 //   cd frontend && npm run e2e
 //
 // Requires a Chromium: `npx playwright install chromium`, or an installed Google

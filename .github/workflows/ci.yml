@@ -65,3 +65,64 @@ jobs:
 
       - name: build
         run: npm run build
+
+  # The two browser walkthroughs, against the real Go server started by bin/dev:
+  # mock answers, then real accounts with an in-memory store. Still no
+  # credentials, database or Docker. One job each, so each gets its own server.
+  e2e-walkthrough:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci && npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: start the app
+        run: |
+          RUNCOACH_MOCK=1 bin/dev > dev.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf localhost:8787/healthz >/dev/null && curl -sf localhost:5173 >/dev/null && exit 0
+            sleep 2
+          done
+          cat dev.log; exit 1
+      - run: npm run e2e
+        working-directory: frontend
+      - if: failure()
+        run: cat dev.log
+
+  e2e-accounts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci && npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: start the app
+        run: |
+          hash=$(echo owner-password | (cd backend && go run ./cmd/hash-password) | tail -1)
+          RUNCOACH_ENV_FILE=none RUNCOACH_INVITE_CODE=e2e-invite RUNCOACH_OWNER_EMAIL=owner@example.com \
+            RUNCOACH_OWNER_PASSWORD_HASH="$hash" GARMIN_MCP_COMMAND=false bin/dev > dev.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf localhost:8787/healthz >/dev/null && curl -sf localhost:5173 >/dev/null && exit 0
+            sleep 2
+          done
+          cat dev.log; exit 1
+      - run: npm run e2e:accounts
+        working-directory: frontend
+      - if: failure()
+        run: cat dev.log

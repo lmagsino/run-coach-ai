@@ -33,7 +33,7 @@
 - [ ] 8.3 Garmin auth on the laptop, paste, live tool-diff test (Leo + code)
 - [ ] 8.4 Live pass from the phone, measured
 - [ ] 8.5 Rough edges, README
-- [ ] 8.6 Playwright smoke in CI
+- [x] 8.6 Playwright smoke in CI (both walkthroughs via bin/dev) and an image build on every push
 - [ ] Done: grounded reply with a chart on the phone
 
 ## Phase 9: Accounts (phase-9-accounts; needs Phase 7 on main)
